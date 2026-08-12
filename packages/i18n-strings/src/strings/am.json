@@ -1,0 +1,156 @@
+{
+  "common": {
+    "loading": "በመጫን ላይ…",
+    "save": "አስቀምጥ",
+    "saveChanges": "ለውጦችን አስቀምጥ",
+    "cancel": "ተወው",
+    "add": "ጨምር",
+    "edit": "አርትዕ",
+    "remove": "አስወግድ",
+    "refresh": "አድስ",
+    "close": "ዝጋ",
+    "back": "ተመለስ",
+    "next": "ቀጣይ",
+    "yes": "አዎ",
+    "no": "አይ",
+    "search": "ፈልግ",
+    "signOut": "ውጣ",
+    "signedIn": "ገብተዋል"
+  },
+  "language": {
+    "switcherLabel": "ቋንቋ",
+    "english": "English",
+    "amharic": "አማርኛ"
+  },
+  "nav": {
+    "insights": "ግንዛቤዎች",
+    "dashboard": "ዳሽቦርድ",
+    "reports": "ሪፖርቶች",
+    "workflow": "ስራ",
+    "newSale": "አዲስ ሽያጭ",
+    "invoices": "ደረሰኞች",
+    "receipts": "ደረሰኝ ማረጋገጫዎች",
+    "withholding": "ተቀናሽ ግብር",
+    "catalogue": "ካታሎግ",
+    "inventory": "እቃ",
+    "stores": "መጋዘኖች",
+    "vendors": "አቅራቢዎች",
+    "purchases": "ግዢዎች",
+    "access": "መዳረሻ",
+    "users": "ተጠቃሚዎች",
+    "merchants": "ነጋዴዎች",
+    "accountExport": "መለያ እና ወደ ውጭ ማውጣት",
+    "audit": "ኦዲት",
+    "emailDeliverability": "የኢሜይል ደረሶነት",
+    "movements": "የክምችት እንቅስቃሴ"
+  },
+  "appShell": {
+    "rejectedTitle": "የነጋዴ ማመልከቻዎ አልጸደቀም።",
+    "rejectedBodyWithReason": "ምክንያት: {{reason}}. የተባረሩበትን ኢሜይል ይመልሱ ወይም ድጋፍ ያግኙ — ችግሩ ከተፈታ በኋላ እንደገና እንመረምራለን።",
+    "rejectedBodyNoReason": "የተባረሩበትን ኢሜይል ይመልሱ ወይም ድጋፍ ያግኙ — ችግሩ ከተፈታ በኋላ እንደገና እንመረምራለን።",
+    "pendingTitle": "የነጋዴ መለያዎ ማጽደቅ በመጠባበቅ ላይ ነው።",
+    "pendingBody": "የንግድ ዝርዝሮችዎን ማርትዕ እና EIRMS ማረጋገጫዎችን ወደ ቅርንጫፍዎ መለጠፍ ይችላሉ። ደረሰኝ እና ደረሰኝ ማረጋገጫ አድልቆ አስተዳዳሪ ካጸደቀ በኋላ ይከፈታል።",
+    "disabledTitle": "ይህ ነጋዴ በአሁኑ ጊዜ ተሰርዟል።",
+    "disabledBody": "እንደገና ለማንቃት ድጋፍ ያግኙ። ተሰርዞ እያለ ደረሰኝ እና ደረሰኝ ማረጋገጫ መመዝገብ ተከልክሏል።"
+  },
+  "auth": {
+    "login": {
+      "title": "ግባ",
+      "email": "ኢሜይል",
+      "password": "የይለፍ ቃል",
+      "submit": "ግባ",
+      "signingIn": "በመግባት ላይ…",
+      "forgot": "የይለፍ ቃል ረሱ?",
+      "invalidCredentials": "የተሳሳተ ኢሜይል ወይም የይለፍ ቃል።"
+    }
+  },
+  "pos": {
+    "stock": {
+      "out": "አልቋል",
+      "left": "{{count}} ቀርቷል",
+      "blocked": "በዚህ ቅርንጫፍ ክምችት የለም — ከመሸጥ በፊት ይሙሉ ወይም ያስተላልፉ።"
+    }
+  },
+  "stores": {
+    "stock": {
+      "view": "ክምችት",
+      "subtitle": "በዚህ መደብር አሁን ያለው ክምችት። 'የሚገኝ' ማለት በክፍት የሽያጭ ጋሪዎች የተያዙትን ሳይጨምር ነው።",
+      "searchPlaceholder": "በእቃ ኮድ፣ መግለጫ፣ SKU ወይም ባርኮድ ፈልግ",
+      "distinctItems": "እቃዎች",
+      "unitsOnHand": "ያለው ብዛት",
+      "reserved": "የተያዘ",
+      "item": "እቃ",
+      "onHand": "ያለው",
+      "available": "የሚገኝ",
+      "low": "ዝቅተኛ",
+      "empty": "በዚህ መደብር ገና ክምችት የለም። ግዢ ይመዝግቡ ወይም ክምችት ያስተላልፉ።",
+      "noMatch": "ከፍለጋው ጋር የሚዛመድ እቃ የለም።",
+      "count": "ቆጠራ"
+    }
+  },
+  "movements": {
+    "title": "የክምችት እንቅስቃሴ",
+    "subtitle": "በ{{branch}} ያለው የክምችት ለውጥ ሁሉ — ሽያጭ፣ ሙሌት፣ ዝውውር፣ ስረዛ እና እርማት።",
+    "cardTitle": "መዝገብ",
+    "allStores": "ሁሉም መደብሮች",
+    "allReasons": "ሁሉም ምክንያቶች",
+    "empty": "በዚህ ቅርንጫፍ ገና ምንም እንቅስቃሴ የለም።",
+    "loadMore": "ተጨማሪ ጫን",
+    "columns": {
+      "when": "መቼ",
+      "item": "እቃ",
+      "what": "ምን ተከሰተ",
+      "change": "ለውጥ",
+      "by": "በማን"
+    },
+    "reason": {
+      "SALE": "ሽያጭ",
+      "RESTOCK": "ሙሌት",
+      "TRANSFER": "ዝውውር",
+      "TRANSFER_OUT": "ዝውውር ወጪ",
+      "TRANSFER_IN": "ዝውውር ገቢ",
+      "ADJUSTMENT": "እርማት",
+      "DAMAGE": "ጉዳት",
+      "EXPIRY": "ጊዜው ያለፈ",
+      "THEFT": "ስርቆት",
+      "INTERNAL_USE": "ውስጣዊ አገልግሎት",
+      "SUPERSEDE": "የተተካ"
+    }
+  },
+  "inventory": {
+    "stockCell": {
+      "acrossBranches": "{{total}} በሁሉም ቅርንጫፎች",
+      "negative": "ክምችት ያረጋግጡ",
+      "negativeHint": "አንድ መደብር ከዜሮ በታች ነው — የትኛው እንደሆነ ለማየት ክምችት ይክፈቱ፣ ከዚያ ቆጠራ ያድርጉ።"
+    }
+  },
+  "filters": {
+    "from": "ከ",
+    "to": "እስከ",
+    "status": "ሁኔታ",
+    "any": "ሁሉም",
+    "clear": "አጽዳ",
+    "showing": "ከ{{total}} ውስጥ {{shown}} እየታየ",
+    "loadMore": "ተጨማሪ ጫን",
+    "searchInvoices": "የገዢ ስም፣ ቲን፣ የሰነድ ቁጥር ወይም IRN",
+    "searchReceipts": "አቅራቢ፣ ገዢ፣ ቲን ወይም የደረሰኝ ቁጥር",
+    "searchWithholding": "የአቅራቢ ህጋዊ ስም ወይም ቲን",
+    "noMatch": "ከእነዚህ ማጣሪያዎች ጋር የሚዛመድ የለም።",
+    "kind": "ዓይነት",
+    "kindSales": "የሽያጭ ደረሰኝ",
+    "kindWithhold": "ተቀናሽ"
+  },
+  "withholding": {
+    "register": {
+      "title": "የተቀናሽ መዝገብ",
+      "withheldTotal": "ጠቅላላ የተቀነሰ",
+      "preTaxTotal": "ከግብር በፊት መሠረት",
+      "entries": "ግቤቶች"
+    }
+  },
+  "access": {
+    "deniedTitle": "ወደዚህ ገጽ መዳረሻ የለዎትም",
+    "deniedBody": "የእርስዎ ሚና ይህን ክፍል አያካትትም። ካስፈለገዎት ፈቃዱን እንዲሰጥዎት አስተዳዳሪ ይጠይቁ።",
+    "backToWork": "ወደ ስራዎ ይመለሱ"
+  }
+}

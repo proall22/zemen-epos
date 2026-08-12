@@ -1,0 +1,22 @@
+{
+  "name": "@eirms/i18n-strings",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Base translation bundles for the EIRMS × Zemen-ePos platform — imported by apps/web and apps/api.",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

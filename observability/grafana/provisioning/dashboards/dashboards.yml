@@ -1,0 +1,16 @@
+# Dashboard provisioning. Grafana scans /var/lib/grafana/dashboards on boot
+# and imports any *.json dashboards it finds — see compose volume mount.
+
+apiVersion: 1
+
+providers:
+  - name: eirms
+    orgId: 1
+    folder: EIRMS × Zemen-ePos
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

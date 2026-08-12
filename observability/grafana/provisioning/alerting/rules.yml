@@ -1,0 +1,270 @@
+# Alert rules — kept deliberately small so the on-call email isn't noisy on
+# day one. Add more once the team has a sense of normal traffic shape.
+#
+# Severity convention: `severity=critical` = page-worthy ("MoR can't issue
+# invoices"), `severity=warning` = look-tomorrow ("we're degraded but
+# transactions still flow").
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: eirms-core
+    folder: EIRMS × Zemen-ePos
+    interval: 1m
+    rules:
+      - uid: api-down
+        title: API is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: up{job="api"} == 0
+              instant: true
+              refId: A
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape the api /metrics endpoint."
+          description: "The api container is unreachable from prometheus for >2m. Check `docker compose ps api` and recent api logs in Grafana → Explore → Loki."
+
+      - uid: api-5xx-rate
+        title: API 5xx error rate >5%
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: ">5% of API requests are 5xx for 5m."
+          description: "Look at the API Overview dashboard 5xx panel and Sentry for the underlying exceptions."
+
+      - uid: api-p95-latency
+        title: API p95 latency >2s
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 2
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency above 2s for 10m (NTR A1 threshold)."
+          description: "Either MoR is slow (check OUTBOUND audit rows) or DB/Redis is saturated (check infra dashboard)."
+
+      - uid: postgres-down
+        title: Postgres is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: up{job="postgres"} == 0
+              instant: true
+              refId: A
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "postgres_exporter cannot reach the database."
+
+      - uid: redis-down
+        title: Redis is down
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: up{job="redis"} == 0
+              instant: true
+              refId: A
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "redis_exporter cannot reach Redis."
+
+      - uid: container-restart
+        title: Container restart detected
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 600, to: 0 }
+            model:
+              expr: changes(container_start_time_seconds{name=~"eirms-epay-.*"}[10m]) > 0
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A core container restarted in the last 10m."
+          description: "Inspect logs for the offending container in Grafana → Explore → Loki."
+
+      # MoR is upstream to every invoice/receipt call. A sustained OUTBOUND
+      # failure rate means either MoR is degraded, our creds are wrong, or the
+      # signed-envelope pipeline is broken. Numerator = OUTBOUND rows where
+      # success=false and action is an EIRMS call (eirms.register, eirms.auth.*,
+      # eirms.receipt.*, eirms.cancel, eirms.verify). Denominator clamps to 1
+      # so a completely idle period doesn't divide-by-zero.
+      - uid: eirms-failure-rate
+        title: EIRMS outbound failure rate >10%
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              expr: |
+                sum(rate(audit_outbound_total{action=~"eirms\\..*",success="false"}[5m]))
+                  / clamp_min(sum(rate(audit_outbound_total{action=~"eirms\\..*"}[5m])), 1)
+                  > 0.1
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: ">10% of EIRMS calls are failing for 5m."
+          description: "Open Grafana → Explore → Loki with `{compose_service=\"api\", stream=\"audit\"} | json | kind=\"OUTBOUND\" | success=\"false\"` to see which action + error message dominates. Common causes: MoR upstream 5xx, expired signing certificate, revoked branch credentials."
+
+      # Sustained CPU pressure on the API container. `rate(container_cpu_
+      # usage_seconds_total)` is CPU-seconds per second — 0.85 = 85% of one
+      # vCPU. The API is single-process Node, so >85% for 5m means we're
+      # queuing requests behind the event loop and should scale out (see
+      # LLD §11.2 Scaling).
+      - uid: api-cpu-high
+        title: API CPU sustained >85%
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              expr: |
+                sum(rate(container_cpu_usage_seconds_total{name=~"eirms-epay-api.*"}[3m]))
+                  by (name) > 0.85
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API container CPU >85% for 5m."
+          description: "Check Grafana → Infrastructure dashboard for the offending container. If sustained, add an API replica per LLD §11.2 or shift heavy work (exports, notifications) off the request path."
+
+      # RSS heading toward the container's memory ceiling. 800 MiB is a
+      # conservative alert threshold for a 1 GiB request-serving replica
+      # (single-tenant default); the recommended 2 GiB replica should be
+      # nowhere near this — sustained high memory usually means an in-request
+      # accumulator, a leaking cache, or the audit-body sanitiser handing a
+      # very large payload to Prisma. cAdvisor emits `working_set_bytes` as
+      # the pageable RSS, which is what OOM-killer watches.
+      - uid: api-memory-high
+        title: API memory working-set >800 MiB
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              expr: |
+                sum(container_memory_working_set_bytes{name=~"eirms-epay-api.*"})
+                  by (name) > 838860800
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API container working set >800 MiB for 5m."
+          description: "Take a heap snapshot (`kill -USR2 <api-pid>`) and inspect. If usage is legitimate, bump the replica's memory limit and revisit the recommended sizing table in LLD §11.3."
+
+      # Sustained disk-write throughput. Any single API replica writing
+      # >50 MiB/s for 5m is unusual — normal path is Postgres/Redis, not the
+      # container filesystem. Real hits are usually the exports pipeline
+      # (§8.5) generating a large per-merchant ZIP, or a runaway log volume.
+      - uid: api-io-high
+        title: API disk write throughput >50 MiB/s
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              expr: |
+                sum(rate(container_fs_writes_bytes_total{name=~"eirms-epay-api.*"}[5m]))
+                  by (name) > 52428800
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API container writing >50 MiB/s to disk for 5m."
+          description: "Most likely the merchant-export pipeline. If a specific merchant is generating a large bundle repeatedly, check `MerchantExport` rows and the ExportsScheduler queue. Otherwise inspect logs for an unbounded write loop."
+
+      # A single client (usually one IP, occasionally one authenticated user)
+      # hammering endpoints past the per-route @Throttle budget starts hitting
+      # 429s. A sustained rate of 429s is either an abuse attempt or a
+      # misbehaving integration. `http_requests_total{status_code="429"}` is
+      # emitted by `HttpMetricsMiddleware` on every throttled response; a rate
+      # of >0.2/s = >12/min for 5m is the alert bar (safe: normal ops rarely
+      # produce more than a burst).
+      - uid: throttle-storm
+        title: Sustained 429s (repeated blocked requests)
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange: { from: 900, to: 0 }
+            model:
+              expr: sum(rate(http_requests_total{status_code="429"}[5m])) > 0.2
+              instant: true
+              refId: A
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: ">12 blocked requests/min for 5m."
+          description: "Someone is being throttled repeatedly. Grafana → Explore → Loki with `{compose_service=\"api\"} |= \"ThrottlerException\"` groups the offending IPs / users; consider a Cloudflare block if it's a single IP. See LLD §9.5."

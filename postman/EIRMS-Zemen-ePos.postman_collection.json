@@ -1,0 +1,1833 @@
+{
+  "info": {
+    "name": "EIRMS Zemen-ePos API (analyzed controllers)",
+    "description": "All 58 operations from auth, users, merchants/branches, inventory, invoices, and receipts. Public requests are identified by path in the collection pre-request script.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "merchantId",
+      "value": ""
+    },
+    {
+      "key": "branchId",
+      "value": ""
+    },
+    {
+      "key": "createdUserId",
+      "value": ""
+    },
+    {
+      "key": "inventoryItemId",
+      "value": ""
+    },
+    {
+      "key": "storeId",
+      "value": ""
+    },
+    {
+      "key": "invoiceId",
+      "value": ""
+    },
+    {
+      "key": "invoiceIrn",
+      "value": ""
+    },
+    {
+      "key": "invoiceDraftId",
+      "value": ""
+    },
+    {
+      "key": "receiptId",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const path = pm.request.url.getPath();",
+          "const publicPaths = [\"/auth/login\", \"/auth/refresh\", \"/auth/forgot-password\", \"/auth/reset-password\", \"/auth/logout\"];",
+          "const isPublicDocument = /^\\/(invoices|receipts)\\/[^/]+\\/(qr\\.png|public)$/.test(path);",
+          "if (publicPaths.includes(path) || isPublicDocument) pm.request.auth = { type: \"noauth\" };",
+          "const branchId = pm.variables.replaceIn(\"{{branchId}}\");",
+          "if (branchId && branchId !== \"{{branchId}}\" && !pm.request.headers.has(\"X-Branch-Id\")) pm.request.headers.add({ key: \"X-Branch-Id\", value: branchId });",
+          "const consentMerchantId = pm.environment.get(\"consentMerchantId\");",
+          "if (consentMerchantId) pm.request.headers.upsert({ key: \"X-Consent-Merchant-Id\", value: consentMerchantId });"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{loginEmail}}\",\n  \"password\": \"{{loginPassword}}\",\n  \"turnstileToken\": \"{{turnstileToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Login succeeded\", () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set(\"accessToken\", json.token);",
+                  "pm.collectionVariables.set(\"userId\", json.user.id);",
+                  "if (json.user.merchantId) pm.collectionVariables.set(\"merchantId\", json.user.merchantId);",
+                  "if (json.user.branchId) pm.collectionVariables.set(\"branchId\", json.user.branchId);"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Refresh succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 201));",
+                  "pm.collectionVariables.set(\"accessToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@acme.et\",\n  \"turnstileToken\": \"{{turnstileToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{passwordResetToken}}\",\n  \"password\": \"FreshPassword123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": ""
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Update preferences",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me",
+                "preferences"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"language\": \"am\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Me context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me/context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me",
+                "context"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"cashier@acme.et\",\n  \"password\": \"CashierPass123!\",\n  \"name\": \"Hana Tadesse\",\n  \"role\": \"CASHIER\",\n  \"merchantId\": \"{{merchantId}}\",\n  \"branchIds\": [\n    \"{{branchId}}\"\n  ],\n  \"branchId\": \"{{branchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"createdUserId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{createdUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{createdUserId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Hana T.\",\n  \"active\": true,\n  \"branchIds\": [\n    \"{{branchId}}\"\n  ],\n  \"branchId\": \"{{branchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Unlock user",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{createdUserId}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{createdUserId}}",
+                "unlock"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Merchants and branches",
+      "item": [
+        {
+          "name": "List merchants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create merchant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"legalName\": \"Acme Trading PLC\",\n  \"tradeName\": \"Acme\",\n  \"tin\": \"0000123456\",\n  \"email\": \"owner@acme.et\",\n  \"phone\": \"0911000000\",\n  \"city\": \"Addis Ababa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"merchantId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get merchant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Update merchant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tradeName\": \"Acme Ethiopia\",\n  \"defaultLanguage\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Reject merchant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}",
+                "reject"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Registration documents could not be verified.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "List branches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}",
+                "branches"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create branch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}",
+                "branches"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bole Branch\",\n  \"systemNumber\": \"SYS-BOLE-01\",\n  \"city\": \"Addis Ababa\",\n  \"country\": \"ET\",\n  \"stockPolicy\": \"BLOCK_ON_EMPTY\",\n  \"latitude\": 9.0054,\n  \"longitude\": 38.7636\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"branchId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Branch stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}/branches/{{branchId}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}",
+                "branches",
+                "{{branchId}}",
+                "stats"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Update branch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/merchants/{{merchantId}}/branches/{{branchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "merchants",
+                "{{merchantId}}",
+                "branches",
+                "{{branchId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tradeName\": \"Acme Bole\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "List inventory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "includeInactive",
+                  "value": "false",
+                  "disabled": false
+                },
+                {
+                  "key": "q",
+                  "value": "phone",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Scan barcode",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/scan/5449000000996",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "scan",
+                "5449000000996"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ITM-001\",\n  \"sku\": \"SKU-001\",\n  \"upc\": \"5449000000996\",\n  \"description\": \"Demo Phone\",\n  \"unit\": \"PCS\",\n  \"unitPrice\": 10000,\n  \"taxCode\": \"VAT15\",\n  \"nature\": \"goods\",\n  \"trackStock\": true,\n  \"stockQuantity\": 20,\n  \"lowStockThreshold\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"inventoryItemId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get item",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Update item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Demo Phone v2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Supersede item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/supersede",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "supersede"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"ITM-002\",\n  \"description\": \"Demo Phone New Price\",\n  \"unitPrice\": 11000,\n  \"taxCode\": \"VAT15\",\n  \"nature\": \"goods\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Adjust stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/stock-adjust",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "stock-adjust"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delta\": 10,\n  \"reason\": \"RESTOCK\",\n  \"note\": \"Opening delivery\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Record stock count",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/stock-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "stock-count"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"counted\": 25,\n  \"storeId\": \"{{storeId}}\",\n  \"note\": \"Month-end count\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Stock by store",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "stock"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Item movements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/movements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "movements"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Write off",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{inventoryItemId}}/write-off",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{inventoryItemId}}",
+                "write-off"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1,\n  \"reason\": \"DAMAGE\",\n  \"note\": \"Screen cracked during handling\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Create invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TransactionType\": \"B2C\",\n  \"BuyerDetails\": {\n    \"LegalName\": \"Walk-in Customer\",\n    \"Phone\": \"0911000000\"\n  },\n  \"DocumentDetails\": {\n    \"Date\": \"01-08-2026T10:00:00\",\n    \"Type\": \"INV\"\n  },\n  \"ItemList\": [\n    {\n      \"LineNumber\": 1,\n      \"ItemCode\": \"ITM-001\",\n      \"ProductDescription\": \"Demo Phone\",\n      \"NatureOfSupplies\": \"Goods\",\n      \"Unit\": \"PCS\",\n      \"Quantity\": 1,\n      \"UnitPrice\": 10000,\n      \"PreTaxValue\": 10000,\n      \"Discount\": 0,\n      \"ExciseTaxValue\": 0,\n      \"TaxCode\": \"VAT15\",\n      \"TaxAmount\": 1500,\n      \"TotalLineAmount\": 11500,\n      \"inventoryItemId\": \"{{inventoryItemId}}\"\n    }\n  ],\n  \"PaymentDetails\": {\n    \"Mode\": \"CREDIT\",\n    \"PaymentTerm\": \"NET_7\"\n  },\n  \"ValueDetails\": {\n    \"Discount\": 0,\n    \"ExciseValue\": 0,\n    \"TaxValue\": 1500,\n    \"IncomeWithholdValue\": 0,\n    \"TransactionWithholdValue\": 0,\n    \"TotalValue\": 11500,\n    \"InvoiceCurrency\": \"ETB\"\n  },\n  \"SourceSystem\": {\n    \"CashierName\": \"Hana\",\n    \"SalesPersonName\": \"Hana\",\n    \"InvoiceCounter\": 1\n  },\n  \"branchId\": \"{{branchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"invoiceId\", json.id);",
+                  "if (json.irn) pm.collectionVariables.set(\"invoiceIrn\", json.irn);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List invoices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-31",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "scope",
+                  "value": "branch",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "UNPAID",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Next invoice sequence",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/next-sequence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "next-sequence"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/draft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "draft"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TransactionType\": \"B2C\",\n  \"BuyerDetails\": {\n    \"LegalName\": \"Walk-in Customer\",\n    \"Phone\": \"0911000000\"\n  },\n  \"DocumentDetails\": {\n    \"Date\": \"01-08-2026T10:00:00\",\n    \"Type\": \"INV\"\n  },\n  \"ItemList\": [\n    {\n      \"LineNumber\": 1,\n      \"ItemCode\": \"ITM-001\",\n      \"ProductDescription\": \"Demo Phone\",\n      \"NatureOfSupplies\": \"Goods\",\n      \"Unit\": \"PCS\",\n      \"Quantity\": 1,\n      \"UnitPrice\": 10000,\n      \"PreTaxValue\": 10000,\n      \"Discount\": 0,\n      \"ExciseTaxValue\": 0,\n      \"TaxCode\": \"VAT15\",\n      \"TaxAmount\": 1500,\n      \"TotalLineAmount\": 11500,\n      \"inventoryItemId\": \"{{inventoryItemId}}\"\n    }\n  ],\n  \"PaymentDetails\": {\n    \"Mode\": \"CREDIT\",\n    \"PaymentTerm\": \"NET_7\"\n  },\n  \"ValueDetails\": {\n    \"Discount\": 0,\n    \"ExciseValue\": 0,\n    \"TaxValue\": 1500,\n    \"IncomeWithholdValue\": 0,\n    \"TransactionWithholdValue\": 0,\n    \"TotalValue\": 11500,\n    \"InvoiceCurrency\": \"ETB\"\n  },\n  \"SourceSystem\": {\n    \"CashierName\": \"Hana\",\n    \"SalesPersonName\": \"Hana\",\n    \"InvoiceCounter\": 1\n  },\n  \"branchId\": \"{{branchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"invoiceDraftId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List drafts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/drafts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "drafts"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Sync draft",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/drafts/{{invoiceDraftId}}/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "drafts",
+                "{{invoiceDraftId}}",
+                "sync"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Delete draft",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/drafts/{{invoiceDraftId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "drafts",
+                "{{invoiceDraftId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Invoice QR PNG",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/qr.png",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "qr.png"
+              ]
+            },
+            "description": ""
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Public invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/public",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "t",
+                  "value": "{{publicToken}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Get by IRN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/by-irn/{{invoiceIrn}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "by-irn",
+                "{{invoiceIrn}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Lookup external",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/lookup-external",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "lookup-external"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"irn\": \"{{externalInvoiceIrn}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Import from IRN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/import-from-irn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "import-from-irn"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"irn\": \"{{externalInvoiceIrn}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Get invoice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Invoice chain",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/chain",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "chain"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Cancel invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "cancel"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"1\",\n  \"remark\": \"Duplicate invoice\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Verify invoice",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/{{invoiceId}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "invoices",
+                "{{invoiceId}}",
+                "verify"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "Receipts",
+      "item": [
+        {
+          "name": "Create sales receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Payment received\",\n  \"collectedAmount\": 11500,\n  \"receiptCurrency\": \"ETB\",\n  \"invoices\": [\n    {\n      \"invoiceId\": \"{{invoiceId}}\",\n      \"paymentCoverage\": \"FULL\",\n      \"invoicePaidAmount\": 11500,\n      \"discountAmount\": 0,\n      \"remainingAmount\": 0,\n      \"totalAmount\": 11500\n    }\n  ],\n  \"transactionDetails\": {\n    \"paymentMode\": \"CASH\",\n    \"modeOfPayment\": \"CASH\",\n    \"collectorName\": \"Hana\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200, 299));",
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.collectionVariables.set(\"receiptId\", json.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List receipts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-31",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "scope",
+                  "value": "branch",
+                  "disabled": true
+                },
+                {
+                  "key": "kind",
+                  "value": "SALES",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Withholding register",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/withholding-register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "withholding-register"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-08-01",
+                  "disabled": false
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-31",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Next receipt sequence",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/next-sequence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "next-sequence"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Create withholding receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/withhold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "withhold"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"3% transaction withholding\",\n  \"invoiceDetail\": {\n    \"invoiceIrn\": \"{{externalInvoiceIrn}}\",\n    \"currency\": \"ETB\"\n  },\n  \"withholdDetail\": {\n    \"type\": \"TWTH\",\n    \"rate\": 3,\n    \"preTaxAmount\": 40000,\n    \"withholdingAmount\": 1200\n  },\n  \"supplier\": {\n    \"legalName\": \"Supplier PLC\",\n    \"tin\": \"0000999999\",\n    \"phone\": \"0911223344\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "Next withholding sequence",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/withhold/next-sequence",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "withhold",
+                "next-sequence"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Receipt QR PNG",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/{{receiptId}}/qr.png",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "{{receiptId}}",
+                "qr.png"
+              ]
+            },
+            "description": ""
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Public receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/{{receiptId}}/public",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "{{receiptId}}",
+                "public"
+              ],
+              "query": [
+                {
+                  "key": "t",
+                  "value": "{{publicToken}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [],
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          }
+        },
+        {
+          "name": "Get receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/{{receiptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "{{receiptId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        },
+        {
+          "name": "Verify receipt",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/receipts/{{receiptId}}/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "receipts",
+                "{{receiptId}}",
+                "verify"
+              ]
+            },
+            "description": ""
+          },
+          "event": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+# compiled output
+dist/
+node_modules/
+/build
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# database backups (keep the dir, ignore the dumps)
+/backups/*
+!/backups/.gitkeep
+
+/apps/api/secrets/eirms/*
+!/apps/api/secrets/eirms/.gitkeep
+
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+/apps/api/dist
+
+# HashiCorp Vault local state — secrets on disk, never commit. Keep the dirs
+# themselves tracked (via .gitkeep) so docker bind-mounts find a target on a
+# fresh clone instead of creating root-owned directories.
+/vault/data/*
+/vault/audit/*
+/vault/approle/*
+!/vault/data/.gitkeep
+!/vault/audit/.gitkeep
+!/vault/approle/.gitkeep
+
+# Observability stack runtime state — TSDB, chunks, grafana sqlite. Configs
+# under observability/{prometheus,loki,promtail,grafana} stay tracked.
+/observability/prometheus/data/*
+/observability/loki/data/*
+/observability/grafana/data/*
+!/observability/prometheus/data/.gitkeep
+!/observability/loki/data/.gitkeep
+!/observability/grafana/data/.gitkeep
+
+/exports/*
+!/exports/.gitkeep
+docs/wthholding_receipt_1.pdf
+docs/receipt_2.pdf
+docs/receipt_1.pdf
+docs/debit_ref_1.pdf
+docs/credit_ref_1.pdf
+
+# pnpm
+.pnpm-store/
+
+# Next.js
+.next/
+out/
+
+# Turbo (if you use Turborepo)
+.turbo/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Go binaries
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+
+# Go coverage
+coverage.out
+*.coverprofile

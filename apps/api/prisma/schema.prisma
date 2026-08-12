@@ -1,0 +1,1256 @@
+// Prisma schema for EIRMS × Zemen-ePos
+// Run `pnpm prisma migrate dev --name <slug>` after schema changes.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN // legacy — no new assignments, kept so old rows still type-check
+  MERCHANT_ADMIN // tenant administrator: manages their merchant's branches + EIRMS creds + users
+  ACCOUNTANT // bookkeeping role: inventory + buyers + invoice/receipt operations, no tenant admin
+  STORE_KEEPER // inventory/stores/purchases/vendors + write-offs; no sales, buyers, or tenant admin
+  CASHIER
+  SUPPORT
+}
+
+/// Tenant root. Every operational row belongs to exactly one Merchant.
+/// SUPER_ADMIN (back-office) users have no merchant — they're cross-tenant.
+model Merchant {
+  id              String    @id @default(cuid())
+  legalName       String
+  tradeName       String?
+  tin             String    @unique
+  email           String?
+  phone           String?
+  vatNumber       String?
+  city            String?
+  region          String?
+  zone            String?
+  wereda          String?
+  kebele          String?
+  houseNumber     String?
+  // active = the merchant can transact. Default false so a self-signed-up
+  // merchant lands in "pending approval" — back-office bootstraps the seed
+  // merchant + admin-created ones with active=true explicitly.
+  active          Boolean   @default(false)
+  // approvedAt is null while the merchant is awaiting review; set once a
+  // super-admin first flips active to true, and kept thereafter (a later
+  // disable doesn't reset it — we still know they were approved once).
+  approvedAt      DateTime?
+  approvedBy      String? // user id of the super-admin who approved
+  // rejectedAt is set when a super-admin explicitly rejects a pending
+  // signup. A rejected merchant can still log in (so the owner sees the
+  // reason) but everything operational is blocked, same as pending.
+  // Resetting to null is allowed (super-admin can change their mind and
+  // approve later) — at which point approvedAt is stamped.
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?
+  defaultLanguage String    @default("en")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  branches       Branch[]
+  users          User[]
+  buyers         Buyer[]
+  inventoryItems InventoryItem[]
+  invoices       Invoice[]
+  invoiceDrafts  InvoiceDraft[]
+  receipts       Receipt[]
+  auditLogs      AuditLog[]
+  stockMovements StockMovement[]
+  exports        MerchantExport[]
+  stores         Store[]
+  vendors        Vendor[]
+  stockPurchases StockPurchase[]
+  stockReservations StockReservation[]
+  consentGrants  ConsentGrant[]
+  harmonizationCodes HarmonizationCode[]
+  scheduledReports ScheduledReport[]
+  scheduledReportRuns ScheduledReportRun[]
+  invoiceCancellations InvoiceCancellation[]
+
+  @@map("merchants")
+}
+
+/// A merchant has one or more branches; each branch is a separately-registered
+/// POS with EIRMS, so credentials, system number and sequence counters are all
+/// per-branch.
+model Branch {
+  id           String   @id @default(cuid())
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name         String
+  systemNumber String   @default("")
+  city         String?
+  region       String?
+  zone         String?
+  wereda       String?
+  kebele       String?
+  houseNumber  String?
+  // Branch-scoped tax identity used in the INSA certificate request form and
+  // in outgoing withhold receipts. `subTin` is MoR's per-establishment tax id
+  // (distinct from the merchant TIN); `tradeName` is the name this
+  // establishment trades under (may differ from the merchant's trade name);
+  // `vatNumber` is the branch VAT registration; `country` defaults to "ET".
+  subTin       String?
+  tradeName    String?
+  vatNumber    String?
+  country      String?
+  // Optional geo-pin from the onboarding wizard / branch form. Stored as
+  // plain floats (WGS84) — good enough for "here's where we are" rendering;
+  // we don't yet do distance queries that would justify a PostGIS column.
+  latitude     Float?
+  longitude    Float?
+
+  // Per-branch EIRMS registration. Nullable so the migration can create a
+  // placeholder default branch; populated at first boot from env (bootstrap)
+  // or via the onboarding API (Phase D).
+  eirmsClientId     String?
+  eirmsClientSecret String?
+  eirmsApikey       String?
+
+  // Per-branch stock enforcement — see BranchStockPolicy. Default preserves
+  // pre-policy behaviour (sales proceed on negative stock).
+  stockPolicy BranchStockPolicy @default(BLOCK_ON_EMPTY)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          User[]
+  branchAccess   UserBranch[]
+  invoices       Invoice[]
+  invoiceDrafts  InvoiceDraft[]
+  receipts       Receipt[]
+  auditLogs      AuditLog[]
+  stockMovements StockMovement[]
+  inventoryItems InventoryItem[]
+  certificate    BranchCertificate?
+  stores         Store[]
+  stockPurchases StockPurchase[]
+  stockReservations StockReservation[]
+  itemPrices     BranchItemPrice[]
+  scheduledReports ScheduledReport[]
+  invoiceCancellations InvoiceCancellation[]
+
+  @@unique([merchantId, systemNumber])
+  @@map("branches")
+}
+
+/// Per-branch INSA certificate onboarding state. The RSA private key and the
+/// issued PEM live in Vault (path `m-<merchantId>/data/branches/<branchId>/
+/// signing`); this row keeps the non-secret bits so we can rebuild the DOCX
+/// request form on demand, show status in the UI, and detect duplicate
+/// generation. `csrPem` is null on the BYO path where the merchant supplied
+/// their own private key + issued cert without going through our CSR flow.
+model BranchCertificate {
+  id       String @id @default(cuid())
+  branchId String @unique
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  // Snapshot of the CSR we generated at key-provisioning time. Kept so
+  // /certificate/request.csr always downloads the exact bytes INSA needs to
+  // match against the private key stored in Vault.
+  csrPem String?
+
+  // Editable form fields. The static Organization Details block on the DOCX
+  // is rebuilt from Merchant + Branch every download; only the Contact Person
+  // section and the Reason are user-authored.
+  contactFullName String?
+  contactJobTitle String?
+  contactEmail    String?
+  contactPhone    String?
+  reason          String?
+
+  // State: null → key generated + CSR ready to download.
+  // submittedAt set → merchant told us the email is out to INSA.
+  // issuedAt set → we accepted a PEM and stored it in Vault.
+  submittedAt DateTime?
+  issuedAt    DateTime?
+
+  // Non-secret display fields extracted from the issued leaf certificate.
+  // Persisted so the UI can show "issued to CN=..., expires ..." without a
+  // Vault round-trip.
+  certSerial    String?
+  certSubjectCn String?
+  certNotBefore DateTime?
+  certNotAfter  DateTime?
+
+  // True when the merchant uploaded their own private key alongside the cert
+  // instead of using our system-generated key. Preserved so we can nudge them
+  // to migrate to the standard flow at renewal, and so any audit read knows
+  // why csrPem is null.
+  usedByo Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("branch_certificates")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  name             String?
+  role             UserRole  @default(CASHIER)
+  active           Boolean   @default(true)
+  lastLoginAt      DateTime?
+  // Brute-force defense. Each failed login increments failedLoginCount; on
+  // success the counter resets. When it crosses the threshold, lockedUntil
+  // is stamped and the account is rejected with a lockout message until
+  // that time passes. The counter and the lock are also cleared whenever
+  // a super-admin saves the user (so an operator can rescue an account
+  // without rotating the password).
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  language         String    @default("en")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // SUPER_ADMIN keeps merchantId + branchId null (cross-tenant back-office).
+  // MERCHANT_ADMIN carries merchantId only — they have implicit access to
+  // every branch under that merchant, so no UserBranch rows are needed.
+  // CASHIER / ACCOUNTANT / SUPPORT carry merchantId AND populate UserBranch
+  // rows for every branch they may act as. `branchId` on User is retained
+  // as the *pinned default* (first branch selected on login); the full set
+  // of allowed branches is UserBranch ∪ {branchId when set}.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  branchId   String?
+  branch     Branch?   @relation(fields: [branchId], references: [id])
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  branchAccess        UserBranch[]
+  // Consent grants this user requested as a SUPER_ADMIN (cross-tenant access).
+  consentRequests     ConsentGrant[] @relation("ConsentRequester")
+
+  @@map("users")
+}
+
+/// Multi-branch access grant. A CASHIER/ACCOUNTANT/SUPPORT user with rows
+/// here may switch between the listed branches at will. MERCHANT_ADMIN
+/// derives access from role + merchantId and doesn't need rows; SUPER_ADMIN
+/// bypasses this table entirely (cross-tenant).
+model UserBranch {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, branchId])
+  @@index([branchId])
+  @@map("user_branches")
+}
+
+/// Single-use, short-lived token issued by /auth/forgot-password. Stores
+/// only a SHA-256 hash of the random token (same shape as RefreshToken).
+/// Consumed by /auth/reset-password; `usedAt` is stamped after a successful
+/// reset so a token can never be replayed.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  issuedAt  DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  ip        String?
+  userAgent String?
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+/**
+ * Opaque refresh tokens — random 32 bytes hex-encoded, hashed (SHA-256) in
+ * the DB. Used to obtain a fresh short-lived access JWT without re-entering
+ * credentials. Rotation pattern: on every refresh, the presented token is
+ * revoked and a new one is issued (replacedById links the pair). Presenting
+ * a revoked-but-not-expired token is treated as compromise — the response is
+ * 401 and ALL the user's refresh tokens are revoked.
+ */
+model RefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  issuedAt     DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  ip           String?
+  userAgent    String?
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Buyer {
+  id          String   @id @default(cuid())
+  tin         String
+  legalName   String
+  email       String?
+  phone       String?
+  vatNumber   String?
+  idType      String?
+  idNumber    String?
+  houseNumber String?
+  region      String?
+  country     String?
+  zone        String?
+  kebele      String?
+  wereda      String?
+  city        String?
+  language    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+
+  invoices Invoice[]
+
+  // Each merchant has its own buyer book — same TIN can exist across merchants.
+  @@unique([merchantId, tin])
+  @@map("buyers")
+}
+
+model InventoryItem {
+  id              String  @id @default(cuid())
+  code            String
+  sku             String?
+  /// UPC / EAN / GTIN — the barcode number on the physical package. Optional,
+  /// but when present it unlocks the barcode-scan sale flow: cashier scans →
+  /// exact-match lookup adds the line to the cart. Unique within a
+  /// (merchantId, branchId) so scanning is never ambiguous within a shop.
+  upc             String?
+  description     String
+  longDescription String?
+  imageUrl        String?
+  unit            String  @default("PCS")
+  unitPrice       Float
+  taxCode         String  @default("VAT15")
+  taxRate         Float   @default(15)
+  harmonizationCode String?
+  exciseRate      Float?
+  nature          String  @default("goods") // "goods" | "service" — drives withholding + the no-mixing rule
+  active          Boolean @default(true)
+
+  // On-hand lives only in InventoryStock, per store. No denormalised total
+  // here — it would be a cross-branch sum on a merchant-wide catalogue.
+  trackStock        Boolean @default(false)
+  lowStockThreshold Float?
+  /// Running weighted-average cost per unit, recomputed inside each purchase
+  /// transaction. Null until the first purchase lands.
+  avgCost           Float?
+
+  // SKU price-versioning: a new item can supersede an older one on a price
+  // change. The new row points to the one it replaced (predecessor); the old
+  // row is deactivated but kept so historical invoices still resolve.
+  predecessorId String?
+  predecessor   InventoryItem?  @relation("ItemVersions", fields: [predecessorId], references: [id])
+  successors    InventoryItem[] @relation("ItemVersions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+
+  // Deprecated: always null. Kept one release as a rollback escape hatch.
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: Restrict)
+
+  invoiceItems   InvoiceItem[]
+  stockMovements StockMovement[]
+  stocks         InventoryStock[]
+  purchaseItems  StockPurchaseItem[]
+  reservations   StockReservation[]
+  branchPrices   BranchItemPrice[]
+
+  // Postgres treats NULLs as distinct, so items without sku/upc never collide.
+  @@unique([merchantId, code])
+  @@unique([merchantId, sku])
+  @@unique([merchantId, upc])
+  @@index([merchantId])
+  @@map("inventory_items")
+}
+
+/// Price is the only field a branch may diverge on. No row = catalogue price.
+model BranchItemPrice {
+  id              String        @id @default(cuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  unitPrice       Float
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([inventoryItemId, branchId])
+  @@index([branchId])
+  @@map("branch_item_prices")
+}
+
+enum StockMovementReason {
+  SALE
+  ADJUSTMENT
+  RESTOCK
+  SUPERSEDE
+  TRANSFER_IN
+  TRANSFER_OUT
+  DAMAGE
+  EXPIRY
+  THEFT
+  INTERNAL_USE
+}
+
+/// Per-branch stock enforcement policy.
+///   ALLOW_NEGATIVE — sales proceed even when the tracked on-hand would go
+///                    below zero (legacy default; matches pre-policy behavior).
+///   BLOCK_ON_EMPTY — sales that would consume more than the on-hand quantity
+///                    of a tracked item are rejected with a 400 before MoR.
+///                    Untracked items (trackStock=false) are always allowed.
+enum BranchStockPolicy {
+  ALLOW_NEGATIVE
+  BLOCK_ON_EMPTY
+}
+
+/// Append-only stock ledger: every change to an item's on-hand quantity.
+model StockMovement {
+  id              String              @id @default(cuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem       @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  delta           Float // signed: negative for sales, positive for restock
+  reason          StockMovementReason
+  note            String?
+  refType         String? // e.g. "invoice"
+  refId           String?
+  actorEmail      String?
+  createdAt       DateTime            @default(now())
+
+  // Inherited from the inventory item / triggering invoice; null for system
+  // adjustments. Stored explicitly so list queries don't need an item join.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  branchId   String?
+  branch     Branch?   @relation(fields: [branchId], references: [id])
+
+  /// Which store the delta applied to. Nullable — old rows written before
+  /// the multi-store expansion have no store; new writes always set it when
+  /// the item is branch-scoped.
+  storeId String?
+  store   Store?  @relation(fields: [storeId], references: [id])
+  /// Pairs the TRANSFER_OUT/TRANSFER_IN rows of one transfer. Null elsewhere.
+  transferId String?
+  /// Backlink to a StockPurchaseItem for RESTOCK rows generated by a
+  /// purchase. Null for manual adjustments and sales.
+  purchaseItemId String?
+  purchaseItem   StockPurchaseItem? @relation(fields: [purchaseItemId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryItemId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([merchantId, branchId, createdAt])
+  @@index([transferId])
+  @@map("stock_movements")
+}
+
+/// A named physical location within a branch (front shelf, back room, cold
+/// storage, warehouse-A). Every branch has at least one Store — a "Main"
+/// store is seeded at migration time and again at branch-create. Sale
+/// decrements draw from the store flagged `isSalesFloor`.
+model Store {
+  id           String   @id @default(cuid())
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id])
+  branchId     String
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  name         String
+  /// Short, stable code — used on labels, QR pins, transfer references.
+  /// Unique within a branch.
+  code         String
+  /// True on the auto-seeded "Main" store. Used as the fallback for
+  /// adjustStock / purchase / write-off when the caller omits a storeId.
+  isDefault    Boolean  @default(false)
+  /// The store the POS decrements from. Exactly one per branch should be
+  /// flagged; not enforced at the DB level to keep migrations simple.
+  isSalesFloor Boolean  @default(false)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stocks        InventoryStock[]
+  movements     StockMovement[]
+  purchaseItems StockPurchaseItem[]
+  reservations  StockReservation[]
+
+  @@unique([branchId, code])
+  @@index([merchantId, branchId])
+  @@map("stores")
+}
+
+/// Per-store on-hand for a single inventory item. The parent
+/// InventoryItem.stockQuantity is the SUM of these — maintained inside every
+/// write transaction so pre-multi-store readers keep working.
+model InventoryStock {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  quantity        Float    @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([inventoryItemId, storeId])
+  @@index([storeId])
+  @@map("inventory_stocks")
+}
+
+/// Merchant-scoped procurement vendor list. Kept intentionally distinct from
+/// the withholding-side "Supplier" DTO (Receipt.supplier*) — that one is the
+/// counterparty on an external invoice being withheld against; this one is
+/// where the merchant buys goods.
+/// Merchant-maintained lookup of harmonization (HS) codes and the excise rate
+/// that goes with each. Inventory items pick from this list instead of typing a
+/// code and a rate by hand.
+///
+/// Items copy the code + rate onto their own row rather than holding an FK: the
+/// literal code is what we send MoR as `ItemList[].HarmonizationCode`, and past
+/// invoices must keep the rate they were registered with even if the merchant
+/// later corrects this table.
+model HarmonizationCode {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  /// The HS code itself, e.g. "2203.00.00". Sent verbatim to MoR.
+  code        String
+  description String?
+  /// Ad-valorem excise as a percentage (5 → 5%). 0 is legitimate: some codes
+  /// are worth referencing purely for classification.
+  exciseRate  Float    @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([merchantId, code])
+  @@index([merchantId])
+  @@map("harmonization_codes")
+}
+
+model Vendor {
+  id          String   @id @default(cuid())
+  merchantId  String
+  merchant    Merchant @relation(fields: [merchantId], references: [id])
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  /// Vendor's TIN when known. Free text — no cross-merchant uniqueness.
+  tin         String?
+  notes       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  purchases StockPurchase[]
+
+  @@unique([merchantId, name])
+  @@index([merchantId])
+  @@map("vendors")
+}
+
+/// A goods-received event — one physical delivery / purchase invoice.
+/// The `items` relation carries the line breakdown; each line writes a
+/// StockMovement (reason=RESTOCK) and an InventoryStock increment in the
+/// same transaction that creates this row.
+model StockPurchase {
+  id           String   @id @default(cuid())
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id])
+  branchId     String
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  vendorId     String?
+  vendor       Vendor?  @relation(fields: [vendorId], references: [id])
+  /// Vendor invoice / PO / delivery note reference.
+  reference    String?
+  purchaseDate DateTime
+  totalCost    Float
+  currency     String   @default("ETB")
+  note         String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items StockPurchaseItem[]
+
+  @@index([merchantId, branchId])
+  @@index([vendorId])
+  @@index([purchaseDate])
+  @@map("stock_purchases")
+}
+
+model StockPurchaseItem {
+  id              String   @id @default(cuid())
+  purchaseId      String
+  purchase        StockPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id])
+  quantity        Float
+  unitCost        Float
+  /// Denormalized quantity * unitCost so purchase-total queries don't have
+  /// to recompute across the item list.
+  lineCost        Float
+
+  movements StockMovement[]
+
+  @@index([purchaseId])
+  @@index([inventoryItemId])
+  @@map("stock_purchase_items")
+}
+
+/// Short-lived POS cart reservation. Created on cart-add; extended by a
+/// 60 s heartbeat while the cashier is on the POS page; deleted on cart
+/// clear or invoice submit (inside the sale transaction). `expiresAt` gates
+/// visibility — expired rows are filtered out of every availability query,
+/// so a background sweeper isn't strictly required; a daily housekeeping
+/// delete is enough.
+model StockReservation {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  storeId         String
+  store           Store    @relation(fields: [storeId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  quantity        Float
+  /// Client-generated UUID per POS instance. One session can hold many
+  /// reservations (one per line in the cart).
+  cartSessionId   String
+  userId          String?
+  actorEmail      String?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([inventoryItemId, expiresAt])
+  @@index([cartSessionId])
+  @@index([branchId, expiresAt])
+  @@map("stock_reservations")
+}
+
+enum InvoiceStatus {
+  ACCEPTED
+  CANCELLED
+}
+
+enum InvoicePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum InvoiceSource {
+  EIRMS // Originated through this platform's /v1/register call.
+  EXTERNAL // Issued elsewhere; imported by IRN (via MoR /v1/verify) so a
+  // receipt can be filed against it. signedQR / signedInvoice /
+  // ackDate are empty strings on these rows — MoR's verify
+  // response doesn't carry them, and the receipt flow doesn't
+  // need them. Marked so the UI can render an "External" badge.
+}
+
+/**
+ * State machine for a draft (offline-issued) invoice.
+ * PENDING     — created locally, awaiting a sync attempt.
+ * SYNCING     — a sync is in flight; mutex against concurrent triggers.
+ * SYNC_FAILED — last attempt failed; `lastError` describes why. The
+ * row stays here until either the next sync succeeds or
+ * it is deleted by an operator.
+ * SYNCED is intentionally not a value — once MoR accepts, the draft row
+ * is replaced by an `Invoice` row in the same transaction, so a
+ * successfully-synced draft never exists.
+ */
+enum DraftSyncStatus {
+  PENDING
+  SYNCING
+  SYNC_FAILED
+}
+
+model Invoice {
+  id               String        @id @default(cuid())
+  irn              String        @unique
+  documentNumber   String
+  documentType     String
+  documentDate     String
+  ackDate          String
+  status           InvoiceStatus @default(ACCEPTED)
+  eirmsStatus      String
+  signedQR         String
+  signedInvoice    String
+  preTaxValue      Float
+  taxValue         Float
+  totalValue       Float
+  withholdValue    Float         @default(0)
+  currency         String        @default("ETB")
+  transactionType  String
+  natureOfSupplies String
+  paymentMode      String
+  paymentTerm      String
+  cashierName      String
+  salespersonName  String
+  invoiceCounter   Int
+  rawRequest       Json
+  rawResponse      Json
+  source           InvoiceSource @default(EIRMS)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  paymentStatus InvoicePaymentStatus @default(UNPAID)
+  paidAmount    Float                @default(0)
+
+  /// IRN this document amends. Set for CRE/DEB memos, null for INV. Chains
+  /// resolve by walking `relatedIrn` upward and looking for other invoices
+  /// whose `relatedIrn` points at THIS invoice's IRN downward.
+  relatedIrn String?
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id])
+
+  buyerId         String
+  buyer           Buyer                @relation(fields: [buyerId], references: [id])
+  items           InvoiceItem[]
+  cancellation    InvoiceCancellation?
+  receiptInvoices ReceiptInvoice[]
+
+  @@index([createdAt])
+  @@index([merchantId, branchId, createdAt])
+  @@index([relatedIrn])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String @id @default(cuid())
+  lineNumber  Int
+  itemCode    String
+  description String
+  unit        String
+  quantity    Float
+  unitPrice   Float
+  discount    Float  @default(0)
+  taxCode     String
+  taxAmount   Float
+  preTaxValue Float
+  totalAmount Float
+
+  invoiceId       String
+  invoice         Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model InvoiceCancellation {
+  id          String   @id @default(cuid())
+  reasonCode  String
+  remark      String?
+  ackDate     String?
+  rawResponse Json
+  createdAt   DateTime @default(now())
+
+  invoiceId String  @unique
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  /// Denormalised like StockMovement's, so reports can window a cancellation
+  /// by tenant without joining invoices. Null on pre-migration rows.
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  branchId   String?
+  branch     Branch?   @relation(fields: [branchId], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([merchantId, branchId, createdAt])
+  @@map("invoice_cancellations")
+}
+
+/// Offline-issued invoice (and credit/debit memo) awaiting registration
+/// with MoR. Stored in its own table so the issued-invoice schema stays
+/// uncompromised — no nullable IRN, no empty-string ack dates, and the
+/// Receipt foreign key can't reference a draft by construction. The full
+/// register-call payload is captured in `payload` so sync just replays
+/// it (the document number + invoice counter are recomputed against the
+/// branch's current SYNCED max at sync time, so MoR's sequence rule is
+/// satisfied even if other invoices have shipped in the meantime).
+model InvoiceDraft {
+  id String @id @default(cuid())
+
+  // Provisional number shown to the cashier and printed on the local
+  // (non-MoR) copy. Recomputed from max(SYNCED) + draft-offset on sync
+  // — the printed/displayed value may shift if other invoices were
+  // issued during the outage. This is intentional and documented in UX
+  // copy.
+  provisionalDocumentNumber String
+
+  // Verbatim copy of the body the register endpoint would POST to MoR.
+  // On sync we deep-merge in the freshly-computed `DocumentNumber` +
+  // `SourceSystem.InvoiceCounter` and let the existing self-heal loop
+  // do the rest.
+  payload Json
+
+  // Denormalised summary columns for the list view — derived from
+  // payload at creation time so the list query doesn't need to parse
+  // JSON. Updated on sync attempts if MoR returns a different counter.
+  documentType    String // INV | CRE | DEB
+  transactionType String // B2C | B2B | B2G
+  buyerTin        String?
+  buyerLegalName  String
+  totalValue      Float
+  currency        String  @default("ETB")
+  cashierName     String
+  salespersonName String
+  // For CRE/DEB drafts — the original (already-issued) invoice's IRN.
+  // Drafts cannot reference another draft as their parent (no IRN
+  // available); the API rejects that at create time.
+  relatedIrn      String?
+
+  // Sync state machine. `attempts` increments per sync attempt; a
+  // successful sync deletes the draft row entirely so SYNCED is never
+  // an in-table state.
+  status        DraftSyncStatus @default(PENDING)
+  lastError     String?
+  lastAttemptAt DateTime?
+  attempts      Int             @default(0)
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId, branchId, createdAt])
+  @@map("invoice_drafts")
+}
+
+enum ReceiptKind {
+  SALES
+  WITHHOLD
+}
+
+model Receipt {
+  id                  String      @id @default(cuid())
+  kind                ReceiptKind @default(SALES)
+  receiptNumber       String
+  receiptType         String      @default("Sales Receipts")
+  receiptDate         String
+  receiptCounter      Int
+  manualReceiptNumber String?
+  reason              String?
+  collectedAmount     Float       @default(0)
+  receiptCurrency     String      @default("ETB")
+  exchangeRate        Float?
+
+  // Withhold-only fields. externalInvoiceIrn carries the supplier's IRN
+  // when the withhold is filed against an invoice that doesn't live in our DB.
+  withholdType       String?
+  withholdRate       Float?
+  withholdPreTax     Float?
+  withholdAmount     Float?
+  externalInvoiceIrn String?
+
+  // Supplier identity for a WITHHOLD receipt — captured at issue time from
+  // the cashier form (the source invoice lives on the supplier's system, not
+  // ours, so we can't derive these). All nullable so old rows keep parsing.
+  supplierLegalName String?
+  supplierTin       String?
+  supplierSubTin    String?
+  supplierVatNumber String?
+  supplierPhone     String?
+  supplierEmail     String?
+  supplierCity      String?
+  supplierZone      String?
+  supplierWereda    String?
+  supplierKebele    String?
+
+  // EIRMS-assigned fields after a successful upstream call
+  eirmsId     Int?
+  rrn         String? @unique
+  signedQR    String?
+  eirmsStatus String?
+
+  // Sales-only transaction details (nullable for WITHHOLD receipts)
+  modeOfPayment                   String?
+  // Local settlement classification (CASH | ADVANCE | CREDIT). Not sent to
+  // MoR — MoR's ModeOfPayment carries the instrument in `modeOfPayment`.
+  paymentClassification           String?
+  collectorName                   String?
+  paymentServiceProvider          String?
+  otherPaymentServiceProviderName String?
+  chequeNumber                    String?
+  cpoNumber                       String?
+  documentNumber                  String?
+  accountNumber                   String?
+  transactionNumber               String?
+
+  rawRequest  Json
+  rawResponse Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id])
+
+  invoices ReceiptInvoice[]
+
+  // Receipt numbers are per-branch (each branch has its own EIRMS sequence).
+  @@unique([branchId, receiptNumber])
+  @@index([createdAt])
+  @@index([merchantId, branchId, createdAt])
+  @@map("receipts")
+}
+
+model ReceiptInvoice {
+  id                String @id @default(cuid())
+  paymentCoverage   String // "FULL" | "PARTIAL"
+  invoicePaidAmount Float
+  discountAmount    Float?
+  remainingAmount   Float?
+  totalAmount       Float
+
+  receiptId String
+  receipt   Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([receiptId, invoiceId])
+  @@map("receipt_invoices")
+}
+
+enum AuditDirection {
+  INBOUND // internal action performed in our system (e.g. inventory edit)
+  OUTBOUND // communication with the EIRMS/MOR system (request + response)
+}
+
+/// Append-only record of every meaningful action. Actor fields are snapshots
+/// (no FK) so the trail stays intact even if the user is later changed/removed.
+model AuditLog {
+  id           String         @id @default(cuid())
+  direction    AuditDirection
+  action       String // e.g. "inventory.update", "eirms.register"
+  actorId      String? // user id snapshot; null for system/anonymous
+  actorEmail   String?
+  actorRole    String?
+  method       String? // HTTP method (INBOUND)
+  path         String? // request path (INBOUND) or EIRMS path (OUTBOUND)
+  entityType   String? // e.g. "invoice", "inventory"
+  entityId     String?
+  statusCode   Int?
+  success      Boolean        @default(true)
+  summary      String?
+  errorMessage String?
+  requestBody  Json? // OUTBOUND request payload (redacted)
+  responseBody Json? // OUTBOUND response body (redacted)
+  durationMs   Int?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime       @default(now())
+
+  // Set from the request context when available; null for system actions and
+  // bootstrap-time events (no user is signed in).
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id])
+  branchId   String?
+  branch     Branch?   @relation(fields: [branchId], references: [id])
+
+  @@index([createdAt])
+  @@index([direction])
+  @@index([action])
+  @@index([actorEmail])
+  @@index([merchantId, createdAt])
+  @@map("audit_logs")
+}
+
+enum MerchantExportStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  EXPIRED
+}
+
+/// Exit-clause bundle. One row per merchant-export request; the BullMQ
+/// worker produces a zip on disk at `filePath`, the merchant downloads it
+/// via a signed URL, and a cleanup tick marks the row EXPIRED once
+/// `expiresAt` passes and removes the file.
+model MerchantExport {
+  id               String               @id @default(cuid())
+  merchantId       String
+  merchant         Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  status           MerchantExportStatus @default(PENDING)
+  requestedAt      DateTime             @default(now())
+  requestedBy      String?
+  requestedByEmail String?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  expiresAt        DateTime?
+  filePath         String?
+  fileBytes        Int?
+  invoiceCount     Int                  @default(0)
+  receiptCount     Int                  @default(0)
+  inventoryCount   Int                  @default(0)
+  buyerCount       Int                  @default(0)
+  downloadCount    Int                  @default(0)
+  errorMessage     String?
+
+  @@index([merchantId, requestedAt])
+  @@index([status])
+  @@map("merchant_exports")
+}
+
+/// Deliverability observability. One row per outbound email; updated in-place
+/// as Resend webhook events arrive (delivered → opened / bounced / complained).
+/// `recipientDomain` is denormalised for per-domain aggregation (bounce rate
+/// per customer domain, deliverability alerts).
+model EmailEvent {
+  id              String   @id @default(cuid())
+  providerId      String   @unique  // Resend email id
+  recipient       String
+  recipientDomain String
+  subject         String?
+  status          String   @default("sent")
+  bouncedAt       DateTime?
+  complainedAt   DateTime?
+  deliveredAt     DateTime?
+  openedAt        DateTime?
+  bounceReason    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([recipientDomain, createdAt])
+  @@index([status, createdAt])
+  @@map("email_events")
+}
+
+model Language {
+  code       String   @id
+  name       String
+  nativeName String
+  active     Boolean  @default(true)
+  ordering   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  overrides TranslationOverride[]
+
+  @@map("languages")
+}
+
+model TranslationOverride {
+  id        String   @id @default(cuid())
+  language  String
+  languageRef Language @relation(fields: [language], references: [code], onDelete: Cascade)
+  key       String
+  value     String
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([language, key])
+  @@index([language])
+  @@map("translation_overrides")
+}
+
+/// Time-limited cross-tenant access a SUPER_ADMIN requests from a merchant.
+/// The super-admin holds no merchant business permissions by default; an
+/// ACCEPTED, unexpired grant layers the scoped permission codes on at request
+/// time (see auth/permissions.ts CONSENT_SCOPE_PERMISSIONS) and pins the
+/// request's ctx.merchantId to this merchant. Approval is via an emailed magic
+/// link the merchant admin must open while logged in — `tokenHash` is the
+/// sha256 of the raw token (raw value only ever lives in the email, mirroring
+/// PasswordResetToken).
+model ConsentGrant {
+  id           String @id @default(cuid())
+  superAdminId String
+  superAdmin   User   @relation("ConsentRequester", fields: [superAdminId], references: [id], onDelete: Cascade)
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  scopes ConsentScope[]
+  status ConsentStatus @default(PENDING)
+
+  // Duration the super-admin asked for; the final granted window is chosen by
+  // the merchant admin on accept (≤ proposed, ≤ 24h). expiresAt = decidedAt +
+  // grantedMinutes and is the authoritative "is this still live" check.
+  proposedMinutes Int
+  grantedMinutes  Int?
+  expiresAt       DateTime?
+
+  // Magic link. tokenHash is unique so a consume is a single indexed lookup;
+  // linkExpiresAt bounds how long the merchant admin has to act on the request.
+  tokenHash     String   @unique
+  linkExpiresAt DateTime
+
+  decidedByUserId String?
+  decidedAt       DateTime?
+  revokedByUserId String?
+  revokedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([merchantId, status])
+  @@index([superAdminId, status])
+  @@map("consent_grants")
+}
+
+enum ConsentStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REVOKED
+  EXPIRED
+}
+
+enum ConsentScope {
+  DASHBOARD
+  INVOICES
+  RECEIPTS
+  INVENTORY
+  INVENTORY_EDIT
+  USERS_EDIT
+}
+
+enum ReportScheduleKind {
+  INTERVAL_HOURS // anchored to local midnight
+  DAILY_AT
+}
+
+enum ReportBranchScope {
+  SINGLE_BRANCH
+  MERCHANT_WIDE
+}
+
+enum ReportSection {
+  SALES
+  INVENTORY
+}
+
+enum ReportRunStatus {
+  PENDING
+  PROCESSING
+  SENT
+  SKIPPED_EMPTY // no activity; watermark deliberately not advanced
+  FAILED
+}
+
+/// Recurring emailed report. The delta guarantee lives in
+/// `deliveredThrough`: only a confirmed send moves it, so empty and failed
+/// runs leave the next window reopening at the same anchor.
+model ScheduledReport {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  name       String
+  active     Boolean  @default(true)
+
+  scheduleKind  ReportScheduleKind
+  /// 1..24. Exactly one of this / dailyAtMinute is set (CHECK constraint).
+  intervalHours Int?
+  /// 0..1439, minutes past local midnight.
+  dailyAtMinute Int?
+  timezone      String             @default("Africa/Addis_Ababa")
+
+  branchScope ReportBranchScope @default(MERCHANT_WIDE)
+  branchId    String?
+  branch      Branch?           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  sections   ReportSection[]
+  /// Internal staff and outside bookkeepers alike, so not a join to User.
+  recipients String[]
+  language   String          @default("en")
+
+  /// Exclusive high-water mark: the next window starts here.
+  deliveredThrough    DateTime
+  /// Recomputed from the SCHEDULED time, never completion, to avoid drift.
+  nextRunAt           DateTime
+  /// Claim lease; a stale one is reclaimed so a killed worker can't strand
+  /// the subscription.
+  lockedAt            DateTime?
+  lockedBy            String?
+  lastRunAt           DateTime?
+  consecutiveFailures Int       @default(0)
+
+  createdBy      String?
+  createdByEmail String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  runs ScheduledReportRun[]
+
+  @@index([active, nextRunAt])
+  @@index([merchantId, createdAt])
+  @@map("scheduled_reports")
+}
+
+/// One delivery attempt, and the delta ledger: the union of SENT and
+/// SKIPPED_EMPTY windows is what proves the timeline has no gaps.
+model ScheduledReportRun {
+  id       String          @id @default(cuid())
+  reportId String
+  report   ScheduledReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  /// Worker reads tenancy off this row, not off the job payload.
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  status ReportRunStatus @default(PENDING)
+  /// Half-open. Written before aggregating so a retry re-sends the identical
+  /// window rather than a drifted one.
+  windowStart  DateTime
+  windowEnd    DateTime
+  scheduledFor DateTime
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  invoiceCount      Int @default(0)
+  cancellationCount Int @default(0)
+  receiptCount      Int @default(0)
+  movementCount     Int @default(0)
+
+  recipientCount    Int     @default(0)
+  /// Set the moment the send returns, so a crash before the watermark
+  /// advance is recoverable without re-mailing.
+  providerMessageId String?
+  errorMessage      String?
+  attempt           Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([reportId, scheduledFor])
+  @@index([merchantId, createdAt])
+  @@index([status])
+  @@map("scheduled_report_runs")
+}

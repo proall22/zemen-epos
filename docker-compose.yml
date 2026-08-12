@@ -1,0 +1,310 @@
+services:
+  # Optional: Comment out or remove if using Neon DB
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: zemen-epos-postgres
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER:-zemen}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zemen}
+  #     POSTGRES_DB: ${POSTGRES_DB:-zemen}
+  #   ports:
+  #     - "127.0.0.1:54320:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zemen} -d $${POSTGRES_DB:-zemen}"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 10
+  #   restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: zemen-epos-redis
+    ports:
+      - "127.0.0.1:63790:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: zemen-epos-vault
+    ports:
+      - "127.0.0.1:18200:8200"
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_ADDR: http://0.0.0.0:8200
+    command: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    volumes:
+      - ./vault/config:/vault/config:ro
+      - ./vault/data:/vault/data
+      - ./vault/audit:/vault/audit
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://127.0.0.1:8200/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  vault-init:
+    image: hashicorp/vault:1.18
+    container_name: zemen-epos-vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+    entrypoint: ["/bin/sh", "/vault/init/entrypoint.sh"]
+    volumes:
+      - ./vault/init:/vault/init:ro
+      - ./vault/config:/vault/config:ro
+      - ./vault/data:/vault/data
+      - ./vault/audit:/vault/audit
+      - ./vault/approle:/vault/approle
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: zemen-epos-api:latest
+    container_name: zemen-epos-api
+    ports:
+      - "127.0.0.1:4899:4899"
+    environment:
+      NODE_ENV: production
+      PORT: 4899
+      # Single source of truth for Compose: the repository-root .env. The :?
+      # guard makes `docker compose config` fail instead of silently overriding
+      # apps/api/.env with an empty value.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in the root .env}
+      REDIS_URL: redis://redis:6379
+      VAULT_ADDR: http://vault:8200
+      VAULT_APPROLE_ROLE_ID_FILE: /vault/approle/role-id
+      VAULT_APPROLE_SECRET_ID_FILE: /vault/approle/secret-id
+      METRICS_USER: ${METRICS_USER:-metrics}
+      METRICS_PASS: ${METRICS_PASS:-metrics}
+      EXPORTS_STORAGE_DIR: /var/lib/zemen/exports
+      EXPORTS_RETENTION_DAYS: ${EXPORTS_RETENTION_DAYS:-7}
+      PRISMA_MIGRATE_RETRIES: ${PRISMA_MIGRATE_RETRIES:-6}
+      EIRMS_SIGNING_PRIVATE_KEY_FILE: ${EIRMS_CERT_DIR:+/etc/zemen/private_key.key}
+      EIRMS_SIGNING_CERT_FILE: ${EIRMS_CERT_DIR:+/etc/zemen/certificate.pem}
+    env_file:
+      - ./apps/api/.env
+    volumes:
+      - ./vault/approle:/vault/approle:ro
+      - ./exports:/var/lib/zemen/exports
+      - ${EIRMS_CERT_DIR:-./apps/api/secrets/zemen}:/etc/zemen:ro
+    depends_on:
+      # postgres: # Remove postgres dependency
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4899/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+    restart: unless-stopped
+
+  # backup service disabled (Neon handles backups)
+  # backup:
+  #   image: postgres:16-alpine
+  #   container_name: zemen-epos-backup
+  #   environment:
+  #     PGHOST: postgres
+  #     PGUSER: ${POSTGRES_USER:-zemen}
+  #     PGPASSWORD: ${POSTGRES_PASSWORD:-zemen}
+  #     PGDATABASE: ${POSTGRES_DB:-zemen}
+  #     BACKUP_CRON: "0 2 * * *"
+  #     BACKUP_RETENTION_DAYS: "14"
+  #   volumes:
+  #     - ./backups:/backups
+  #     - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+  #     - ./scripts/backup-entrypoint.sh:/usr/local/bin/backup-entrypoint.sh:ro
+  #   entrypoint: ["/bin/sh", "/usr/local/bin/backup-entrypoint.sh"]
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_SENTRY_DSN_WEB: ${VITE_SENTRY_DSN_WEB:-}
+        VITE_SENTRY_ENVIRONMENT: ${VITE_SENTRY_ENVIRONMENT:-}
+        VITE_SENTRY_TRACES_SAMPLE_RATE: ${VITE_SENTRY_TRACES_SAMPLE_RATE:-0.1}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+    image: zemen-epos-web:latest
+    container_name: zemen-epos-web
+    ports:
+      - "127.0.0.1:4999:4999"
+    environment:
+      NODE_ENV: production
+      PORT: 4999
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:4999/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Observability stack - optional, comment out if not needed
+  observability-init:
+    image: alpine:3.20
+    container_name: zemen-epos-observability-init
+    entrypoint: ["/bin/sh", "/init/entrypoint.sh"]
+    volumes:
+      - ./observability/init:/init:ro
+      - ./observability/prometheus/data:/data/prometheus
+      - ./observability/loki/data:/data/loki
+      - ./observability/grafana/data:/data/grafana
+    restart: "no"
+
+  loki:
+    image: grafana/loki:3.4.1
+    container_name: zemen-epos-loki
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - ./observability/loki/data:/loki
+    depends_on:
+      observability-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.1
+    container_name: zemen-epos-promtail
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: zemen-epos-prometheus
+    ports:
+      - "127.0.0.1:19090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/data:/prometheus
+    depends_on:
+      observability-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: zemen-epos-grafana
+    ports:
+      - "127.0.0.1:13000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SMTP_USER: resend
+      GF_SMTP_PASSWORD: ${RESEND_API_KEY:-}
+      GF_SMTP_FROM_ADDRESS: ${GRAFANA_ALERT_FROM:-alerts@zemen-pos.et}
+      GF_SMTP_FROM_NAME: ${GRAFANA_ALERT_FROM_NAME:-ZEMEN Alerts}
+      GF_ALERT_EMAIL_TO: ${GRAFANA_ALERT_EMAIL_TO:-ops@zemen-pos.et}
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+    volumes:
+      - ./observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./observability/grafana/data:/var/lib/grafana
+    depends_on:
+      observability-init:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Disabled: postgres_exporter (no local postgres)
+  # postgres_exporter:
+  #   image: prometheuscommunity/postgres-exporter:v0.16.0
+  #   container_name: zemen-epos-postgres-exporter
+  #   environment:
+  #     DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-zemen}:${POSTGRES_PASSWORD:-zemen}@postgres:5432/${POSTGRES_DB:-zemen}?sslmode=disable
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: zemen-epos-redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: zemen-epos-cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+volumes:
+  # postgres-data: # Remove postgres volume
+  redis-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.99.0.0/24

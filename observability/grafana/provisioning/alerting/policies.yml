@@ -1,0 +1,13 @@
+# Notification policy — all alerts go to ops-email. A more sophisticated
+# setup would split critical vs warning to different receivers; we start with
+# one route and let alert labels carry severity.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: ops-email
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

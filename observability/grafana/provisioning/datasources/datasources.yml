@@ -1,0 +1,25 @@
+# Provisioned datasources — applied at Grafana boot so the operator never has
+# to click through "Add Data Source". Both run over the internal docker
+# network; no host port hop, no credentials.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000

@@ -1,0 +1,24 @@
+# Email contact point. Grafana SMTP credentials come from env (set in
+# docker-compose.yml) and point at Resend's relay (smtp.resend.com:465).
+# The destination address is interpolated from GF_ALERT_EMAIL_TO.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: ops-email
+    receivers:
+      - uid: ops-email-receiver
+        type: email
+        settings:
+          addresses: ${GF_ALERT_EMAIL_TO}
+          singleEmail: false
+          subject: "[EIRMS][{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}"
+          message: |
+            {{ range .Alerts }}
+            *Alert:* {{ .Labels.alertname }}
+            *Status:* {{ .Status }}
+            *Summary:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Started:* {{ .StartsAt }}
+            {{ end }}

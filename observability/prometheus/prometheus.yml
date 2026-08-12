@@ -1,0 +1,54 @@
+# Prometheus scrape config for the EIRMS × Zemen-ePos stack. Targets are addressed
+# over the internal docker network (compose service names), so this file only
+# works inside the compose stack — not from the host.
+#
+# Retention is set on the prometheus command line in docker-compose.yml
+# (--storage.tsdb.retention.time=90d). Adjust there, not here.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: eirms-epay
+
+scrape_configs:
+  # Self-scrape — useful for "is prometheus itself reachable" dashboards.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Nest API. Docker's internal DNS resolves the `api` service name to all
+  # replica IPs, so `dns_sd_configs` picks up scale-out (`docker compose up
+  # --scale api=N`) without touching this file. In single-instance dev the
+  # DNS returns one A record — same code path, no special case.
+  # /metrics is protected by basic auth: keep username/password in lock-step
+  # with METRICS_USER / METRICS_PASS in apps/api/.env or scrapes return 401.
+  - job_name: api
+    metrics_path: /metrics
+    basic_auth:
+      username: metrics
+      password: metrics
+    dns_sd_configs:
+      - names: ["api"]
+        type: A
+        port: 4899
+        refresh_interval: 10s
+
+  # Postgres exporter. Wraps libpq + a bag of system view queries; safe to run
+  # against the production DB at a 15s interval.
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres_exporter:9187"]
+
+  # Redis exporter. Single INFO call per scrape.
+  - job_name: redis
+    static_configs:
+      - targets: ["redis_exporter:9121"]
+
+  # cAdvisor exposes per-container CPU/memory/network/disk metrics by reading
+  # cgroup info from the docker host. The standard choice for compose-deployed
+  # workloads — gives you "which container is hogging RAM" without a per-host
+  # agent.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]

@@ -1,0 +1,12 @@
+-- Add MERCHANT_ADMIN to the UserRole enum.
+--
+-- Splits "merchant administrator" out of ACCOUNTANT. Up to Phase G the
+-- self-signup flow assigned ACCOUNTANT to merchant owners because there was
+-- no dedicated role with merchant.update / branch.* perms — that
+-- conflated bookkeeping with tenant admin. MERCHANT_ADMIN is the proper
+-- home for those perms; ACCOUNTANT shrinks back to a bookkeeping role.
+--
+-- Real-data-safe: pure enum extension. Existing rows are untouched —
+-- the seed demo ACCOUNTANT stays as ACCOUNTANT (it's a demo of the slimmed
+-- bookkeeping role); future self-signups will land as MERCHANT_ADMIN.
+ALTER TYPE "UserRole" ADD VALUE 'MERCHANT_ADMIN';
