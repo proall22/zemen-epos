@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Package } from "lucide-react";
+import { ImageUp, Package, Plus } from "lucide-react";
 
 import { ErrorCallout } from "@/components/error-callout";
 import { UpcBarcode } from "@/components/upc-barcode";
@@ -28,9 +28,12 @@ import { readApiMessage, readUserMessages } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import {
   createInventoryItem,
+  createInventoryCategory,
+  listInventoryCategories,
   listHarmonizationCodes,
   supersedeInventoryItem,
   updateInventoryItem,
+  uploadInventoryImage,
 } from "@/lib/resources";
 import {
   DEFAULT_TAX_CODE,
@@ -40,6 +43,7 @@ import {
 import type {
   HarmonizationCode,
   InventoryItem,
+  InventoryCategory,
 } from "@/lib/types";
 
 // Same trick for "no harmonization code".
@@ -61,6 +65,7 @@ interface FormState {
   description: string;
   longDescription: string;
   imageUrl: string;
+  categoryId: string;
   unit: string;
   unitPrice: string;
   /** The rate is never entered by hand — it follows from the code, both here
@@ -83,6 +88,7 @@ function blank(): FormState {
     description: "",
     longDescription: "",
     imageUrl: "",
+    categoryId: "",
     unit: "PCS",
     unitPrice: "",
     taxCode: DEFAULT_TAX_CODE,
@@ -103,6 +109,7 @@ function fromItem(item: InventoryItem): FormState {
     description: item.description,
     longDescription: item.longDescription ?? "",
     imageUrl: item.imageUrl ?? "",
+    categoryId: item.categoryId ?? "",
     unit: item.unit,
     unitPrice: String(item.unitPrice),
     taxCode: normalizeTaxCode(item.taxCode),
@@ -134,6 +141,9 @@ export function InventoryFormSheet({
   const [saveAsNew, setSaveAsNew] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hsCodes, setHsCodes] = useState<HarmonizationCode[]>([]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [newCategory, setNewCategory] = useState("");
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<{ title: string; items: string[] } | null>(
     null,
   );
@@ -170,10 +180,42 @@ export function InventoryFormSheet({
 
   useEffect(() => {
     if (mode === null) return;
-    void listHarmonizationCodes()
-      .then(setHsCodes)
-      .catch(() => setHsCodes([]));
+    void Promise.all([listHarmonizationCodes(), listInventoryCategories()])
+      .then(([codes, categoryRows]) => {
+        setHsCodes(codes);
+        setCategories(categoryRows);
+      })
+      .catch(() => {
+        setHsCodes([]);
+        setCategories([]);
+      });
   }, [mode]);
+
+  async function addCategory() {
+    const name = newCategory.trim();
+    if (!name) return;
+    try {
+      const created = await createInventoryCategory({ name });
+      setCategories((rows) => [...rows, created].sort((a, b) => a.name.localeCompare(b.name)));
+      update("categoryId", created.id);
+      setNewCategory("");
+    } catch (err) {
+      setError({ title: (err as Error).message, items: [] });
+    }
+  }
+
+  async function uploadImage(file?: File) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      update("imageUrl", await uploadInventoryImage(file));
+    } catch (err) {
+      setError({ title: (err as Error).message, items: [] });
+    } finally {
+      setUploading(false);
+    }
+  }
 
   // An item can hold a code that has since been deactivated or removed from the
   // table. Keep it in the list so opening the item doesn't silently clear it.
@@ -244,6 +286,7 @@ export function InventoryFormSheet({
         description,
         longDescription: form.longDescription.trim() || undefined,
         imageUrl: form.imageUrl.trim() || undefined,
+        categoryId: form.categoryId || undefined,
         unit: form.unit || "PCS",
         unitPrice,
         // taxRate is intentionally absent — the server derives it from taxCode.
@@ -298,7 +341,7 @@ export function InventoryFormSheet({
         if (!o) onClose();
       }}
     >
-      <SheetContent side="right" className="sm:max-w-xl">
+      <SheetContent side="right" className="w-full sm:max-w-xl">
         <SheetHeader>
           <div className="flex flex-col gap-1 pr-8">
             <SheetTitle className="flex items-center gap-2">
@@ -319,7 +362,7 @@ export function InventoryFormSheet({
           noValidate
         >
           <SheetBody className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Code *">
                 <Input
                   required
@@ -412,6 +455,30 @@ export function InventoryFormSheet({
                   </SelectContent>
                 </Select>
               </Field>
+              <Field label="Category" spanFull>
+                <Select
+                  value={form.categoryId || "__none__"}
+                  onValueChange={(v) => update("categoryId", v === "__none__" ? "" : v)}
+                >
+                  <SelectTrigger><SelectValue placeholder="Uncategorized" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Uncategorized</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    placeholder="New category, e.g. Medicines"
+                  />
+                  <Button type="button" variant="outline" onClick={() => void addCategory()} disabled={!newCategory.trim()}>
+                    <Plus className="size-4" /> Add
+                  </Button>
+                </div>
+              </Field>
             </div>
 
             <div className="border-t pt-3">
@@ -428,7 +495,7 @@ export function InventoryFormSheet({
 
             {showAdvanced && (
               <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Unit">
                     <Input
                       value={form.unit}
@@ -467,6 +534,21 @@ export function InventoryFormSheet({
                     placeholder="https://…"
                   />
                 </Field>
+                <Field label="Or upload an image">
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      disabled={uploading}
+                      onChange={(e) => void uploadImage(e.target.files?.[0])}
+                    />
+                    <ImageUp className="size-5 text-muted-foreground" />
+                  </div>
+                  {form.imageUrl && (
+                    <img src={form.imageUrl} alt="Item preview" className="mt-2 h-24 w-24 rounded-md border object-cover" />
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">JPEG, PNG, WebP, or GIF; maximum 5 MB.</p>
+                </Field>
                 <Field label="Long description">
                   <Textarea
                     value={form.longDescription}
@@ -487,7 +569,7 @@ export function InventoryFormSheet({
                     Track stock for this item
                   </label>
                   {form.trackStock && (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <Field label="On hand">
                         <Input
                           type="number"

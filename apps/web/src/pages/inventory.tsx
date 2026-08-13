@@ -41,9 +41,11 @@ import { ApiError } from "@/lib/api";
 import { readApiMessage } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { adjustStock, listInventory, listStores } from "@/lib/resources";
+import { adjustStock, listInventoryCategories, listInventoryPage, listStores } from "@/lib/resources";
 import { nonTaxableSuffix } from "@/lib/invoice-types";
-import type { InventoryItem, Store } from "@/lib/types";
+import type { InventoryCategory, InventoryItem, Store } from "@/lib/types";
+
+const ALL_CATEGORIES = "__all__";
 
 export function InventoryPage() {
   const { t } = useTranslation();
@@ -54,7 +56,12 @@ export function InventoryPage() {
   const canTransfer = can("store.update");
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [categoryId, setCategoryId] = useState(ALL_CATEGORIES);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -64,9 +71,15 @@ export function InventoryPage() {
   // Debounce the search so we're not firing on every keystroke — 250ms is
   // just under a fast typist's rhythm and keeps the UI responsive.
   useEffect(() => {
-    const handle = setTimeout(() => void refresh(search), 250);
+    const handle = setTimeout(() => void refresh(search, categoryId, page), 250);
     return () => clearTimeout(handle);
-  }, [search]);
+  }, [search, categoryId, page]);
+
+  useEffect(() => setPage(1), [search, categoryId]);
+
+  useEffect(() => {
+    void listInventoryCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
 
   // Stores are needed for the write-off / transfer store pickers; load once
   // and cache. Both features gate on their own permission, so fetch when
@@ -76,10 +89,13 @@ export function InventoryPage() {
     void listStores().then(setStores).catch(() => setStores([]));
   }, [canWriteOff, canTransfer]);
 
-  async function refresh(q = search) {
+  async function refresh(q = search, selectedCategory = categoryId, selectedPage = page) {
     setLoading(true);
     try {
-      setItems(await listInventory(q));
+      const result = await listInventoryPage(selectedPage, 10, q, selectedCategory === ALL_CATEGORIES ? undefined : selectedCategory);
+      setItems(result.items);
+      setTotal(result.total);
+      setTotalPages(result.totalPages);
     } catch {
       // ignore
     } finally {
@@ -113,13 +129,13 @@ export function InventoryPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
-      <header className="flex items-end justify-between gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-4 overflow-x-clip px-3 py-5 sm:gap-6 sm:px-6 sm:py-10">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-col gap-1">
           <p className="text-[13px] font-medium text-muted-foreground">
             Zemen-ePos · Inventory
           </p>
-          <h1 className="flex items-center gap-2.5 text-[28px] font-semibold tracking-tight text-foreground">
+          <h1 className="flex items-center gap-2.5 text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
             <span className="flex size-8 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
               <Package className="size-4" />
             </span>
@@ -130,7 +146,7 @@ export function InventoryPage() {
           </p>
         </div>
         {canCreate && (
-          <Button onClick={() => setSheetMode("create")}>
+          <Button className="w-full sm:w-auto" onClick={() => setSheetMode("create")}>
             <Plus />
             {t("inventory.addItem")}
           </Button>
@@ -138,19 +154,28 @@ export function InventoryPage() {
       </header>
 
 
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
+      <Card className="min-w-0 overflow-visible">
+        <CardHeader className="p-4 pb-2 sm:p-6 sm:pb-2">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-[8px] bg-primary/10 text-primary">
                 <Sparkles className="size-3.5" />
               </span>
               <div>
-                <CardTitle className="text-[15px]">{`${t("nav.inventory")} (${items.length})`}</CardTitle>
+                <CardTitle className="text-[15px]">{`${t("nav.inventory")} (${total})`}</CardTitle>
                 <CardDescription className="text-xs">{t("inventory.search")}</CardDescription>
               </div>
             </div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-[12rem_minmax(0,1fr)_auto] lg:w-auto">
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CATEGORIES}>All categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="relative w-full sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -175,7 +200,7 @@ export function InventoryPage() {
           </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-3 pt-2 sm:p-6 sm:pt-4">
           {loading ? (
             <p className="text-sm text-muted-foreground">
               {t("common.loading")}
@@ -185,11 +210,31 @@ export function InventoryPage() {
               {t("inventory.empty")}
             </p>
           ) : (
-            <Table>
+            <>
+            <div className="grid gap-3 md:hidden">
+              {items.map((item) => (
+                <MobileItemCard
+                  key={item.id}
+                  item={item}
+                  categoryName={categories.find((category) => category.id === item.categoryId)?.name ?? "Uncategorized"}
+                  stores={stores}
+                  canUpdate={canUpdate}
+                  canTransfer={canTransfer}
+                  canWriteOff={canWriteOff}
+                  onEdit={() => startEdit(item)}
+                  onTransfer={() => setTransferItem(item)}
+                  onWriteOff={() => setWriteOffItem(item)}
+                  onRefresh={refresh}
+                />
+              ))}
+            </div>
+            <div className="scrollbar-hidden hidden w-full min-w-0 overflow-x-auto overflow-y-visible overscroll-x-contain md:block">
+            <Table className="min-w-[1050px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-14"></TableHead>
                   <TableHead>{t("inventory.columns.item")}</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead>{t("inventory.columns.sku")}</TableHead>
                   <TableHead>{t("inventory.columns.code")}</TableHead>
                   <TableHead>{t("inventory.columns.barcode")}</TableHead>
@@ -227,6 +272,9 @@ export function InventoryPage() {
                           </span>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {categories.find((category) => category.id === item.categoryId)?.name ?? "Uncategorized"}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {item.sku ?? "—"}
@@ -307,6 +355,23 @@ export function InventoryPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            {totalPages > 1 && (
+              <div className="mt-4 flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-center text-xs text-muted-foreground sm:text-left">
+                  Page {page} of {totalPages} · {total} items
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:flex">
+                  <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+                    Previous
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -336,6 +401,59 @@ export function InventoryPage() {
         }}
       />
     </div>
+  );
+}
+
+function MobileItemCard({
+  item, categoryName, stores, canUpdate, canTransfer, canWriteOff,
+  onEdit, onTransfer, onWriteOff, onRefresh,
+}: {
+  item: InventoryItem;
+  categoryName: string;
+  stores: Store[];
+  canUpdate: boolean;
+  canTransfer: boolean;
+  canWriteOff: boolean;
+  onEdit: () => void;
+  onTransfer: () => void;
+  onWriteOff: () => void;
+  onRefresh: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <article className="rounded-xl border bg-card p-3 shadow-sm">
+      <div className="flex min-w-0 gap-3">
+        <Thumbnail src={item.imageUrl} alt={item.description} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate font-medium">{item.description}{nonTaxableSuffix(item.taxCode)}</h3>
+              <p className="truncate text-xs text-muted-foreground">{categoryName} · {item.code}</p>
+            </div>
+            <span className="shrink-0 font-semibold tabular-nums">{item.unitPrice.toFixed(2)}</span>
+          </div>
+          <div className="mt-2 flex items-end justify-between gap-3 text-xs">
+            <div className="min-w-0 text-muted-foreground">
+              <p className="truncate">SKU: {item.sku ?? "—"}</p>
+              <p>{item.taxCode} · {item.unit}</p>
+            </div>
+            <StockCell item={item} />
+          </div>
+        </div>
+      </div>
+      {canUpdate && (
+        <div className="mt-3 flex flex-wrap justify-end gap-1 border-t pt-2">
+          {item.trackStock && <RestockButton item={item} stores={stores} onDone={onRefresh} />}
+          {canTransfer && item.trackStock && stores.filter((s) => s.active).length > 1 && (
+            <Button variant="ghost" size="sm" onClick={onTransfer}>{t("inventory.actions.move")}</Button>
+          )}
+          {canWriteOff && item.trackStock && (
+            <Button variant="ghost" size="sm" onClick={onWriteOff}>{t("inventory.actions.writeOff")}</Button>
+          )}
+          <Button variant="outline" size="sm" onClick={onEdit}>{t("common.edit")}</Button>
+        </div>
+      )}
+    </article>
   );
 }
 

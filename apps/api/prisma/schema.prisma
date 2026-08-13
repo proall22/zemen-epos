@@ -63,6 +63,7 @@ model Merchant {
   users          User[]
   buyers         Buyer[]
   inventoryItems InventoryItem[]
+  inventoryCategories InventoryCategory[]
   invoices       Invoice[]
   invoiceDrafts  InvoiceDraft[]
   receipts       Receipt[]
@@ -350,6 +351,8 @@ model InventoryItem {
   description     String
   longDescription String?
   imageUrl        String?
+  categoryId      String?
+  category        InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   unit            String  @default("PCS")
   unitPrice       Float
   taxCode         String  @default("VAT15")
@@ -396,7 +399,28 @@ model InventoryItem {
   @@unique([merchantId, sku])
   @@unique([merchantId, upc])
   @@index([merchantId])
+  @@index([categoryId])
   @@map("inventory_items")
+}
+
+/// Merchant-defined catalogue grouping. Categories are deliberately generic
+/// so hotels, pharmacies, shops, restaurants, and other businesses can use
+/// terminology that matches their operation.
+model InventoryCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  items      InventoryItem[]
+
+  @@unique([merchantId, name])
+  @@index([merchantId, active])
+  @@map("inventory_categories")
 }
 
 /// Price is the only field a branch may diverge on. No row = catalogue price.

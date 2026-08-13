@@ -10,6 +10,8 @@ import type {
   Invoice,
   InvoiceDraft,
   InventoryItem,
+  InventoryCategory,
+  InventoryPage,
   ItemStockRow,
   LoginResponse,
   ManagedUser,
@@ -400,11 +402,44 @@ export function listBuyers(): Promise<Buyer[]> {
   return api<Buyer[]>("/buyers");
 }
 
-export function listInventory(q?: string): Promise<InventoryItem[]> {
-  const path = q?.trim()
-    ? `/inventory?q=${encodeURIComponent(q.trim())}`
-    : "/inventory";
+export function listInventory(q?: string, categoryId?: string): Promise<InventoryItem[]> {
+  const params = new URLSearchParams();
+  if (q?.trim()) params.set("q", q.trim());
+  if (categoryId) params.set("categoryId", categoryId);
+  const query = params.toString();
+  const path = `/inventory${query ? `?${query}` : ""}`;
   return api<InventoryItem[]>(path);
+}
+
+export function listInventoryPage(page: number, pageSize: number, q?: string, categoryId?: string): Promise<InventoryPage> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (q?.trim()) params.set("q", q.trim());
+  if (categoryId) params.set("categoryId", categoryId);
+  return api<InventoryPage>(`/inventory/page?${params}`);
+}
+
+export function listInventoryCategories(): Promise<InventoryCategory[]> {
+  return api<InventoryCategory[]>("/inventory/categories");
+}
+
+export function createInventoryCategory(input: {
+  name: string;
+  description?: string;
+}): Promise<InventoryCategory> {
+  return api<InventoryCategory>("/inventory/categories", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function uploadInventoryImage(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("image", file);
+  const uploaded = await api<{ path: string }>("/inventory/images", {
+    method: "POST",
+    body: form,
+  });
+  return `${API_BASE}${uploaded.path}`;
 }
 
 /** Exact-match barcode scan lookup (UPC > SKU > item code). Returns null on
@@ -429,6 +464,7 @@ export interface CreateInventoryItemInput {
   description: string;
   longDescription?: string;
   imageUrl?: string;
+  categoryId?: string;
   unit: string;
   unitPrice: number;
   /** The server derives `taxRate` from this — it is not accepted from clients,

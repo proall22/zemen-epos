@@ -1,20 +1,32 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Header,
   NotFoundException,
   Param,
   Patch,
   Post,
   Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import type { InventoryItem, StockMovement } from '@prisma/client';
+import type { InventoryCategory, InventoryItem, StockMovement } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermissions } from '../auth/require-permissions.decorator';
+import { Public } from '../auth/public.decorator';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
+import { CreateInventoryCategoryDto } from './dto/create-inventory-category.dto';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { StockCountDto } from './dto/stock-count.dto';
@@ -22,6 +34,7 @@ import { WriteOffDto } from './dto/write-off.dto';
 import {
   InventoryService,
   type InventoryItemWithStock,
+  type InventoryPage,
   type ItemStockRow,
 } from './inventory.service';
 
@@ -29,6 +42,17 @@ import {
 @Controller('inventory')
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}
+
+  @Get('page')
+  @RequirePermissions('inventory.view')
+  paged(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('q') q?: string,
+    @Query('categoryId') categoryId?: string,
+  ): Promise<InventoryPage> {
+    return this.inventory.page(Number(page) || 1, Number(pageSize) || 10, q, categoryId);
+  }
 
   @Get()
   @RequirePermissions('inventory.view')
@@ -45,8 +69,58 @@ export class InventoryController {
   list(
     @Query('includeInactive') includeInactive?: string,
     @Query('q') q?: string,
+    @Query('categoryId') categoryId?: string,
   ): Promise<InventoryItemWithStock[]> {
-    return this.inventory.list(includeInactive === 'true', q);
+    return this.inventory.list(includeInactive === 'true', q, categoryId);
+  }
+
+  @Get('categories')
+  @RequirePermissions('inventory.view')
+  listCategories(): Promise<InventoryCategory[]> {
+    return this.inventory.listCategories();
+  }
+
+  @Post('categories')
+  @RequirePermissions('inventory.create')
+  createCategory(
+    @Body() body: CreateInventoryCategoryDto,
+  ): Promise<InventoryCategory> {
+    return this.inventory.createCategory(body);
+  }
+
+  @Post('images')
+  @RequirePermissions('inventory.create')
+  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async uploadImage(
+    @UploadedFile() file?: { buffer: Buffer; mimetype: string; originalname: string },
+  ): Promise<{ path: string }> {
+    if (!file) throw new BadRequestException('Choose an image to upload.');
+    const allowed = new Map([
+      ['image/jpeg', '.jpg'],
+      ['image/png', '.png'],
+      ['image/webp', '.webp'],
+      ['image/gif', '.gif'],
+    ]);
+    const extension = allowed.get(file.mimetype);
+    if (!extension) {
+      throw new BadRequestException('Only JPEG, PNG, WebP, and GIF images are allowed.');
+    }
+    const directory = process.env.IMAGE_UPLOAD_DIR || join(process.cwd(), 'uploads', 'inventory');
+    await mkdir(directory, { recursive: true });
+    const filename = `${randomUUID()}${extension}`;
+    await writeFile(join(directory, filename), file.buffer, { flag: 'wx' });
+    return { path: `/inventory/images/${filename}` };
+  }
+
+  @Get('images/:filename')
+  @Public()
+  @Header('Cache-Control', 'public, max-age=31536000, immutable')
+  image(@Param('filename') filename: string): StreamableFile {
+    if (!/^[0-9a-f-]+\.(?:jpg|png|webp|gif)$/i.test(filename) || extname(filename) === '') {
+      throw new NotFoundException('Image not found.');
+    }
+    const directory = process.env.IMAGE_UPLOAD_DIR || join(process.cwd(), 'uploads', 'inventory');
+    return new StreamableFile(createReadStream(join(directory, filename)));
   }
 
   @Get('scan/:code')

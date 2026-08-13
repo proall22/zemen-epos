@@ -614,6 +614,7 @@ export interface InventoryItem {
   description: string;
   longDescription: string | null;
   imageUrl: string | null;
+  categoryId: string | null;
   unit: string;
   unitPrice: number;
   taxCode: string;
@@ -640,6 +641,23 @@ export interface InventoryItem {
   predecessorId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface InventoryCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InventoryPage {
+  items: InventoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export type StockMovementReason =

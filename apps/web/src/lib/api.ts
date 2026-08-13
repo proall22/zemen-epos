@@ -111,7 +111,9 @@ export async function api<T>(
       ...init,
       credentials: "include",
       headers: {
-        "Content-Type": "application/json",
+        ...(init.body instanceof FormData
+          ? {}
+          : { "Content-Type": "application/json" }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(branchOverride ? { "X-Branch-Id": branchOverride } : {}),
         ...(consentOverride

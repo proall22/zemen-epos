@@ -121,8 +121,7 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Package,
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
-    hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
     end: true,
   },
   {
@@ -183,8 +182,7 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Users,
     perm: "user.view",
     sectionKey: "nav.access",
-    hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN"],
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN"],
   },
   {
     to: "/merchants",
@@ -194,7 +192,7 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "merchant.view",
     sectionKey: "nav.access",
     superAdminSectionKey: "nav.platform",
-    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN"],
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "ACCOUNTANT"],
   },
   {
     to: "/branch-approvals",

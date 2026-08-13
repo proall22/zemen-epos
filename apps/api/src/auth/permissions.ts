@@ -228,9 +228,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
   ACCOUNTANT: [
     'dashboard.view',
     'inventory.view',
-    'inventory.create',
-    'inventory.update',
-    'inventory.delete',
     'buyer.view',
     'buyer.create',
     'buyer.update',
@@ -242,14 +239,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     'withholding.view',
     'withholding.create',
     'branch.view',
+    'audit.view',
     // Accountants handle procurement + write-offs. Store CRUD is admin-only.
     'store.view',
     'vendor.view',
-    'vendor.create',
-    'vendor.update',
     'purchase.view',
-    'purchase.create',
-    'writeoff.create',
     // Scheduled reports complement the accountant's financial dashboard.
     'report.view',
     'report.manage',

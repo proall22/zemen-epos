@@ -96,6 +96,7 @@ export function AddAdHocLineDialog({ onAdd, forcedNature }: AddAdHocLineDialogPr
       description: description.trim(),
       longDescription: null,
       imageUrl: null,
+      categoryId: null,
       unit: unit.trim() || "PCS",
       unitPrice: Number(unitPrice),
       taxCode,

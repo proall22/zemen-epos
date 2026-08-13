@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  type InventoryCategory,
   type InventoryItem,
   type StockMovement,
   type Store,
@@ -36,6 +37,14 @@ export type InventoryItemWithStock = InventoryItem & {
    */
   sellable: number | null;
 };
+
+export interface InventoryPage {
+  items: InventoryItemWithStock[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
 
 export interface ItemStockRow {
   storeId: string;
@@ -103,18 +112,64 @@ export class InventoryService {
   async list(
     includeInactive = false,
     q?: string,
+    categoryId?: string,
   ): Promise<InventoryItemWithStock[]> {
-    const rows = await this.listRows(includeInactive, q);
+    const rows = await this.listRows(includeInactive, q, categoryId);
     return this.withStock(rows);
+  }
+
+  async page(
+    page = 1,
+    pageSize = 10,
+    q?: string,
+    categoryId?: string,
+  ): Promise<InventoryPage> {
+    const safePage = Math.max(1, Math.floor(page));
+    const safeSize = Math.min(100, Math.max(10, Math.floor(pageSize)));
+    const baseWhere: Prisma.InventoryItemWhereInput = {
+      ...merchantScope(this.context.get()),
+      active: true,
+      ...(categoryId?.trim() ? { categoryId: categoryId.trim() } : {}),
+    };
+    const query = q?.trim();
+    const contains = query
+      ? { contains: query, mode: 'insensitive' as const }
+      : undefined;
+    const where: Prisma.InventoryItemWhereInput = contains
+      ? {
+          AND: [baseWhere, { OR: [
+            { code: contains }, { sku: contains }, { upc: contains },
+            { description: contains }, { longDescription: contains },
+          ] }],
+        }
+      : baseWhere;
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.inventoryItem.findMany({
+        where,
+        orderBy: { code: 'asc' },
+        skip: (safePage - 1) * safeSize,
+        take: safeSize,
+      }),
+      this.prisma.inventoryItem.count({ where }),
+    ]);
+    return {
+      items: await this.withStock(rows),
+      total,
+      page: safePage,
+      pageSize: safeSize,
+      totalPages: Math.max(1, Math.ceil(total / safeSize)),
+    };
   }
 
   private listRows(
     includeInactive = false,
     q?: string,
+    categoryId?: string,
   ): Promise<InventoryItem[]> {
     const baseWhere: Prisma.InventoryItemWhereInput = {
       ...merchantScope(this.context.get()),
       ...(includeInactive ? {} : { active: true }),
+      ...(categoryId?.trim() ? { categoryId: categoryId.trim() } : {}),
     };
     const query = q?.trim();
     if (!query) {
@@ -146,6 +201,47 @@ export class InventoryService {
       orderBy: { code: 'asc' },
       take: 50,
     });
+  }
+
+  listCategories(): Promise<InventoryCategory[]> {
+    return this.prisma.inventoryCategory.findMany({
+      where: { ...merchantScope(this.context.get()), active: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createCategory(input: {
+    name: string;
+    description?: string;
+  }): Promise<InventoryCategory> {
+    const merchantId = this.resolveMerchantId();
+    try {
+      return await this.prisma.inventoryCategory.create({
+        data: {
+          merchantId,
+          name: input.name.trim(),
+          description: input.description?.trim() || null,
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('A category with this name already exists.');
+      }
+      throw error;
+    }
+  }
+
+  private async assertCategory(categoryId: string, merchantId: string) {
+    const category = await this.prisma.inventoryCategory.findFirst({
+      where: { id: categoryId, merchantId, active: true },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new BadRequestException('Category is invalid or inactive.');
+    }
   }
 
   /**
@@ -261,6 +357,9 @@ export class InventoryService {
       description: input.description,
       longDescription: input.longDescription?.trim() || null,
       imageUrl: input.imageUrl?.trim() || null,
+      ...(input.categoryId
+        ? { category: { connect: { id: input.categoryId } } }
+        : {}),
       unit: input.unit ?? 'PCS',
       unitPrice: input.unitPrice,
       taxCode,
@@ -279,6 +378,9 @@ export class InventoryService {
 
   async create(input: CreateInventoryItemDto): Promise<InventoryItem> {
     const merchantId = this.resolveMerchantId();
+    if (input.categoryId) {
+      await this.assertCategory(input.categoryId, merchantId);
+    }
     try {
       const item = await this.prisma.inventoryItem.create({
         data: this.toCreateData(input, merchantId),
@@ -556,8 +658,17 @@ export class InventoryService {
     id: string,
     input: UpdateInventoryItemDto,
   ): Promise<InventoryItem> {
-    await this.get(id); // tenant check — 404 if cross-tenant or missing
-    const data: Prisma.InventoryItemUpdateInput = { ...input };
+    const existing = await this.get(id); // tenant check — 404 if cross-tenant or missing
+    if (input.categoryId) {
+      await this.assertCategory(input.categoryId, existing.merchantId);
+    }
+    const { categoryId, stockQuantity: _stockQuantity, branchId: _branchId, ...fields } = input;
+    const data: Prisma.InventoryItemUpdateInput = { ...fields };
+    if (categoryId !== undefined) {
+      data.category = categoryId
+        ? { connect: { id: categoryId } }
+        : { disconnect: true };
+    }
     if (input.harmonizationCode !== undefined) {
       data.harmonizationCode = input.harmonizationCode.trim() || null;
     }

@@ -46,6 +46,11 @@ export class CreateInventoryItemDto {
   @IsString()
   imageUrl?: string;
 
+  @ApiPropertyOptional({ description: 'Merchant inventory category id' })
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
   @ApiPropertyOptional({ example: 'PCS' })
   @IsOptional()
   @IsString()
