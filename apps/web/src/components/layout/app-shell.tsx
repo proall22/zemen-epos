@@ -24,6 +24,7 @@ export function AppShell() {
   const { t } = useTranslation();
   const { can, merchant, user, consentSession, branch } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const sidebarRole = user?.role === "ADMIN" ? "BRANCH_ADMIN" : user?.role;
 
   // ── Collapsible sidebar state ───────────────────────────────────────────
   const [collapsed, setCollapsed] = useState(() => {
@@ -50,7 +51,13 @@ export function AppShell() {
   const visibleGroups = NAV_SECTIONS.map((sectionKey) => ({
     sectionKey,
     items: NAV_ROUTES.filter(
-      (r) => r.sectionKey === sectionKey && routeAllows(r, can),
+      (r) =>
+        (isSuperAdmin
+          ? (r.superAdminSectionKey ?? r.sectionKey) === sectionKey &&
+            !r.hideForPlatformAdmin
+          : r.sectionKey === sectionKey) &&
+        (!r.sidebarRoles || (!!sidebarRole && r.sidebarRoles.includes(sidebarRole))) &&
+        routeAllows(r, can),
     ),
   })).filter((g) => g.items.length > 0);
 
@@ -108,7 +115,7 @@ export function AppShell() {
                       "group flex items-center gap-3 rounded-[10px] transition-all duration-150",
                       collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
                       isActive
-                        ? "bg-[#EEF2FF] text-primary font-medium"
+                        ? "bg-[var(--sidebar-active)] text-primary font-medium"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )
                   }

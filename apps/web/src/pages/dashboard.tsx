@@ -65,11 +65,14 @@ export function DashboardPage() {
 	if (user?.role === "ACCOUNTANT") {
 		return <AccountantDashboardPage />;
 	}
+	// BRANCH_ADMIN deliberately uses the operational business dashboard. The
+	// request context pins every aggregate to their single granted branch, and
+	// ScopeToggle remains hidden because cross-branch access is merchant-only.
 	return <MerchantDashboardPage />;
 }
 
 function MerchantDashboardPage() {
-	const { user } = useAuth();
+	const { user, branch } = useAuth();
 	const [data, setData] = useState<DashboardSummary | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -87,7 +90,7 @@ function MerchantDashboardPage() {
 
 	useEffect(() => {
 		void refresh();
-	}, [scope]);
+	}, [scope, branch?.id]);
 
 	async function refresh() {
 		setLoading(true);
@@ -641,14 +644,14 @@ function KpiCard({
 		{ card: string; icon: string; value: string }
 	> = {
 		primary: {
-			card: "bg-primary text-primary-foreground border-primary",
-			icon: "bg-white/20 text-white",
-			value: "text-primary-foreground",
+			card: "bg-card border-primary/25",
+			icon: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+			value: "text-foreground",
 		},
 		accent: {
-			card: "bg-accent text-accent-foreground border-accent",
-			icon: "bg-white/20 text-white",
-			value: "text-accent-foreground",
+			card: "bg-card border-cyan-700/25",
+			icon: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300",
+			value: "text-foreground",
 		},
 		warning: {
 			card: "bg-warning/10 border-warning/20",
@@ -663,7 +666,7 @@ function KpiCard({
 	};
 
 	const s = styles[variant];
-	const isColored = variant === "primary" || variant === "accent";
+	const isColored = false;
 
 	return (
 		<div
@@ -910,7 +913,7 @@ function timeAgo(iso: string): string {
 }
 
 function CashierDashboardPage() {
-	const { user } = useAuth();
+	const { user, branch } = useAuth();
 	const [data, setData] = useState<CashierSummary | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -921,7 +924,7 @@ function CashierDashboardPage() {
 
 	useEffect(() => {
 		void refresh();
-	}, [scope]);
+	}, [scope, branch?.id]);
 
 	async function refresh() {
 		setLoading(true);
@@ -1098,7 +1101,7 @@ function CashierDashboardPage() {
 }
 
 function AccountantDashboardPage() {
-	const { user } = useAuth();
+	const { user, branch } = useAuth();
 	const [data, setData] = useState<AccountantSummary | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -1109,7 +1112,7 @@ function AccountantDashboardPage() {
 
 	useEffect(() => {
 		void refresh();
-	}, [scope]);
+	}, [scope, branch?.id]);
 
 	async function refresh() {
 		setLoading(true);

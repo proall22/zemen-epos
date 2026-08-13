@@ -17,6 +17,7 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
+import type { UserRole } from "./types";
 
 /**
  * Every authenticated route, with the permission that opens it.
@@ -44,6 +45,14 @@ export interface NavRoute {
   superAdminLabelKey?: string;
   /** Whether the route should match exactly (used for NavLink 'end' prop). */
   end?: boolean;
+  /** Keep the SaaS operator shell focused on platform operations. Merchant
+   *  catalogue/POS routes remain available only inside consented sessions. */
+  hideForPlatformAdmin?: boolean;
+  /** Platform-specific section heading. */
+  superAdminSectionKey?: string;
+  /** Optional sidebar audience. Permissions still guard direct navigation;
+   *  this keeps each role's daily menu focused on its actual job. */
+  sidebarRoles?: UserRole[];
 }
 
 export const NAV_ROUTES: NavRoute[] = [
@@ -55,6 +64,7 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "dashboard.view",
     anyOf: ["dashboard.system"],
     sectionKey: "nav.insights",
+    superAdminSectionKey: "nav.platform",
   },
   {
     to: "/reports",
@@ -62,6 +72,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: CalendarClock,
     perm: "report.view",
     sectionKey: "nav.insights",
+    superAdminSectionKey: "nav.operations",
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT"],
   },
 
   {
@@ -70,6 +82,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Receipt,
     perm: "invoice.create",
     sectionKey: "nav.workflow",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "CASHIER"],
   },
   {
     to: "/invoices",
@@ -77,6 +91,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: FileText,
     perm: "invoice.view",
     sectionKey: "nav.workflow",
+    superAdminSectionKey: "nav.operations",
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "CASHIER", "SUPPORT"],
   },
   { to: "/invoices/:id", labelKey: "nav.invoices", icon: FileText, perm: "invoice.view" },
   {
@@ -85,6 +101,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Banknote,
     perm: "receipt.view",
     sectionKey: "nav.workflow",
+    superAdminSectionKey: "nav.operations",
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "CASHIER", "SUPPORT"],
   },
   { to: "/receipts/:id", labelKey: "nav.receipts", icon: Banknote, perm: "receipt.view" },
   {
@@ -93,6 +111,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Percent,
     perm: "withholding.view",
     sectionKey: "nav.workflow",
+    superAdminSectionKey: "nav.operations",
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "ACCOUNTANT", "SUPPORT"],
   },
 
   {
@@ -101,6 +121,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Package,
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
     end: true,
   },
   {
@@ -109,6 +131,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Warehouse,
     perm: "store.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
   },
   {
     to: "/inventory/movements",
@@ -116,6 +140,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: History,
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
   },
   {
     to: "/inventory/vendors",
@@ -123,6 +149,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Truck,
     perm: "vendor.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
   },
   {
     to: "/inventory/purchases",
@@ -130,6 +158,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: PackagePlus,
     perm: "purchase.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
   },
   {
     to: "/inventory/harmonization",
@@ -137,6 +167,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Percent,
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
   },
 
   {
@@ -151,6 +183,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Users,
     perm: "user.view",
     sectionKey: "nav.access",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN"],
   },
   {
     to: "/merchants",
@@ -159,6 +193,17 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Building2,
     perm: "merchant.view",
     sectionKey: "nav.access",
+    superAdminSectionKey: "nav.platform",
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN"],
+  },
+  {
+    to: "/branch-approvals",
+    labelKey: "nav.branchApprovals",
+    icon: Building2,
+    perm: "merchant.create",
+    sectionKey: "nav.access",
+    superAdminSectionKey: "nav.platform",
+    sidebarRoles: ["SUPER_ADMIN"],
   },
   {
     to: "/account",
@@ -166,6 +211,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Settings,
     perm: "merchant.export",
     sectionKey: "nav.access",
+    hideForPlatformAdmin: true,
+    sidebarRoles: ["MERCHANT_ADMIN"],
   },
   {
     to: "/audit",
@@ -173,6 +220,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: ScrollText,
     perm: "audit.view",
     sectionKey: "nav.access",
+    superAdminSectionKey: "nav.administration",
+    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN"],
   },
   {
     to: "/deliverability",
@@ -180,6 +229,8 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: MailCheck,
     perm: "deliverability.view",
     sectionKey: "nav.access",
+    superAdminSectionKey: "nav.administration",
+    sidebarRoles: ["SUPER_ADMIN"],
   },
   {
     to: "/admin/translations",
@@ -187,11 +238,16 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Languages,
     perm: "translation.manage",
     sectionKey: "nav.access",
+    superAdminSectionKey: "nav.administration",
+    sidebarRoles: ["SUPER_ADMIN"],
   },
 ];
 
 /** Sidebar section order. A section with no permitted routes is dropped. */
 export const NAV_SECTIONS = [
+  "nav.platform",
+  "nav.operations",
+  "nav.administration",
   "nav.insights",
   "nav.workflow",
   "nav.catalogue",

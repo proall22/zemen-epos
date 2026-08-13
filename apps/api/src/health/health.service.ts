@@ -27,6 +27,13 @@ export interface HealthReport {
   };
 }
 
+export interface QueueHealthCounts {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+}
+
 /**
  * Probes runtime dependencies. Used by the `/healthz` endpoint that a
  * load balancer / k8s readiness probe hits. `/livez` doesn't need this —
@@ -81,7 +88,12 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   }
 
   async check(): Promise<HealthReport> {
-    const [db, redis] = await Promise.all([this.checkDb(), this.checkRedis()]);
+    const [db, redis, vault, eirms] = await Promise.all([
+      this.checkDb(),
+      this.checkRedis(),
+      this.checkHttpDependency(this.config.get<string>('VAULT_ADDR'), '/v1/sys/health', [200, 429]),
+      this.checkHttpDependency(this.config.get<string>('EIRMS_BASE_URL'), '', undefined, true),
+    ]);
     
     // Redis also acts as the backend for BullMQ queue worker
     const queueWorker: HealthCheck = {
@@ -89,14 +101,34 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       latencyMs: redis.latencyMs,
     };
 
-    // Mock checks for Vault and EIRMS for the System Dashboard
-    // Real implementation would ping the vault server and eirms endpoint
-    const vault: HealthCheck = { status: 'ok', latencyMs: 15 };
-    const eirms: HealthCheck = { status: 'ok', latencyMs: 245 };
-
     const status =
-      db.status === 'down' || redis.status === 'down' ? 'degraded' : 'ok';
+      [db, redis, vault, eirms].some((check) => check.status === 'down')
+        ? 'degraded'
+        : 'ok';
     return { status, checks: { db, redis, vault, eirms, queueWorker } };
+  }
+
+  /** Reads BullMQ's Redis structures for every queue used by this service. */
+  async queueCounts(): Promise<QueueHealthCounts> {
+    if (!this.redis) return { pending: 0, processing: 0, completed: 0, failed: 0 };
+    const names = ['notifications', 'sms-notifications', 'scheduled-reports', 'drafts-sync', 'merchant-exports'];
+    const pipeline = this.redis.pipeline();
+    for (const name of names) {
+      pipeline.llen(`bull:${name}:wait`);
+      pipeline.llen(`bull:${name}:paused`);
+      pipeline.llen(`bull:${name}:active`);
+      pipeline.zcard(`bull:${name}:completed`);
+      pipeline.zcard(`bull:${name}:failed`);
+    }
+    const results = await pipeline.exec();
+    const values = (results ?? []).map(([error, value]) => error ? 0 : Number(value));
+    const total = (offset: number) => names.reduce((sum, _, index) => sum + (values[index * 5 + offset] ?? 0), 0);
+    return {
+      pending: total(0) + total(1),
+      processing: total(2),
+      completed: total(3),
+      failed: total(4),
+    };
   }
 
   private async checkDb(): Promise<HealthCheck> {
@@ -134,6 +166,33 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
         message: shortError(err),
         latencyMs: Date.now() - t0,
       };
+    }
+  }
+
+  /** Makes a short, read-only reachability request without exposing the URL. */
+  private async checkHttpDependency(
+    baseUrl: string | undefined,
+    path: string,
+    acceptedStatuses?: number[],
+    acceptClientErrors = false,
+  ): Promise<HealthCheck> {
+    if (!baseUrl) return { status: 'skipped' };
+    const started = Date.now();
+    try {
+      const response = await fetch(new URL(path, baseUrl), {
+        method: 'GET',
+        signal: AbortSignal.timeout(3_000),
+      });
+      const reachable = acceptedStatuses
+        ? acceptedStatuses.includes(response.status)
+        : response.ok || (acceptClientErrors && response.status < 500);
+      return {
+        status: reachable ? 'ok' : 'down',
+        ...(!reachable ? { message: `HTTP ${response.status}` } : {}),
+        latencyMs: Date.now() - started,
+      };
+    } catch (error) {
+      return { status: 'down', message: shortError(error), latencyMs: Date.now() - started };
     }
   }
 }

@@ -1,6 +1,7 @@
 export type UserRole =
   | "SUPER_ADMIN"
   | "MERCHANT_ADMIN"
+  | "BRANCH_ADMIN"
   | "ACCOUNTANT"
   | "STORE_KEEPER"
   | "CASHIER"
@@ -11,6 +12,7 @@ export type UserRole =
 // it's the natural pick when a merchant admin invites another owner-level user.
 export const ASSIGNABLE_ROLES = [
   "MERCHANT_ADMIN",
+  "BRANCH_ADMIN",
   "ACCOUNTANT",
   "STORE_KEEPER",
   "CASHIER",
@@ -21,6 +23,7 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 export const ROLE_LABELS: Record<UserRole, string> = {
   SUPER_ADMIN: "Super admin",
   MERCHANT_ADMIN: "Merchant admin",
+  BRANCH_ADMIN: "Branch admin",
   ACCOUNTANT: "Accountant",
   STORE_KEEPER: "Store keeper",
   CASHIER: "Cashier",
@@ -201,6 +204,7 @@ export interface StockMovementRow {
   inventoryItemId: string;
   itemCode: string;
   itemDescription: string;
+  itemImageUrl: string | null;
   storeId: string | null;
   storeName: string | null;
   branchName: string | null;
@@ -246,9 +250,27 @@ export interface SafeBranch {
   /** Signing material in Vault — not derivable from the branch row. */
   hasSigningKey: boolean;
   hasCert: boolean;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  rejectedAt: string | null;
+  rejectedBy: string | null;
+  rejectionReason: string | null;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Non-secret branch row shown in the global Super Admin review queue. */
+export interface PendingBranchReview {
+  id: string;
+  merchantId: string;
+  merchantName: string;
+  merchantTin: string;
+  name: string;
+  systemNumber: string;
+  city: string | null;
+  region: string | null;
+  createdAt: string;
 }
 
 /** Per-branch INSA certificate onboarding status. Mirrors
@@ -375,7 +397,9 @@ export interface SystemSummary {
     active: number;
     pending: number;
     rejected: number;
+    suspended: number;
   };
+  tenants: { totalBranches: number; activeBranches: number; activeUsers: number };
   documents: {
     invoicesToday: number;
     invoicesThisMonth: number;
@@ -396,6 +420,7 @@ export interface SystemSummary {
     createdAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
+    mainBranch: { id: string; name: string; city: string | null; region: string | null } | null;
   }>;
   recentAuditLogs: Array<{
     id: string;
@@ -465,7 +490,6 @@ export interface AccountantSummary {
   collected: number;
   outstanding: number;
   withholding: number;
-  withholdingPending: number;
   recentReceipts: Array<{
     id: string;
     receiptNumber: string;

@@ -48,7 +48,14 @@ export function ScheduledReportsPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!merchantId) return;
+    // Platform administrators have no tenant until they enter an approved
+    // consent session. Never leave the page in a permanent loading state.
+    if (!merchantId) {
+      setReports([]);
+      setLoading(false);
+      setError("Select a merchant through an approved consent session to view its scheduled reports.");
+      return;
+    }
     setLoading(true);
     try {
       const [list, lim] = await Promise.all([

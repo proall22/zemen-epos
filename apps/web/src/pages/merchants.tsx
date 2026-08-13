@@ -58,8 +58,10 @@ import { ApiError } from "@/lib/api";
 import { readApiMessage } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import {
+  approveBranch,
   listBranches,
   listMerchants,
+  rejectBranch,
   rejectMerchant,
   updateBranch,
   updateMerchant,
@@ -174,6 +176,21 @@ export function MerchantsPage() {
       );
     } catch {
       if (selectedId) void refreshBranches(selectedId);
+    }
+  }
+
+  async function decideBranch(b: SafeBranch, decision: "approve" | "reject") {
+    try {
+      const reason = decision === "reject"
+        ? window.prompt("Reason for rejecting this branch (optional):")
+        : null;
+      if (decision === "reject" && reason === null) return;
+      const updated = decision === "approve"
+        ? await approveBranch(b.merchantId, b.id)
+        : await rejectBranch(b.merchantId, b.id, reason || undefined);
+      setBranches((prev) => prev.map((x) => x.id === updated.id ? updated : x));
+    } catch (e) {
+      setBranchesError(readApiMessage((e as ApiError).body) ?? (e as Error).message);
     }
   }
 
@@ -467,7 +484,11 @@ export function MerchantsPage() {
                               <CredsBadge branch={b} />
                             </TableCell>
                             <TableCell>
-                              {b.active ? (
+                              {b.rejectedAt ? (
+                                <Badge variant="destructive">Rejected</Badge>
+                              ) : !b.approvedAt ? (
+                                <Badge variant="warning">Pending review</Badge>
+                              ) : b.active ? (
                                 <Badge variant="success">Active</Badge>
                               ) : (
                                 <Badge variant="muted">Disabled</Badge>
@@ -479,14 +500,26 @@ export function MerchantsPage() {
                             >
                               {canEditBranch && (
                                 <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setCertBranch(b)}
-                                  >
-                                    <ShieldCheck />
-                                    Certificate
-                                  </Button>
+                                  {user?.role === "SUPER_ADMIN" && !b.approvedAt && !b.rejectedAt && (
+                                    <>
+                                      <Button variant="ghost" size="sm" onClick={() => void decideBranch(b, "approve")}>
+                                        <CircleCheck />Approve
+                                      </Button>
+                                      <Button variant="ghost" size="sm" onClick={() => void decideBranch(b, "reject")}>
+                                        <CircleX />Reject
+                                      </Button>
+                                    </>
+                                  )}
+                                  {b.approvedAt && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setCertBranch(b)}
+                                    >
+                                      <ShieldCheck />
+                                      Certificate
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -498,14 +531,16 @@ export function MerchantsPage() {
                                     <Pencil />
                                     Edit
                                   </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => toggleBranchActive(b)}
-                                  >
-                                    {b.active ? <CircleX /> : <CircleCheck />}
-                                    {b.active ? "Disable" : "Enable"}
-                                  </Button>
+                                  {b.approvedAt && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => toggleBranchActive(b)}
+                                    >
+                                      {b.active ? <CircleX /> : <CircleCheck />}
+                                      {b.active ? "Disable" : "Enable"}
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </TableCell>

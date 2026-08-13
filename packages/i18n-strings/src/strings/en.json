@@ -110,6 +110,9 @@
     "amharic": "አማርኛ"
   },
   "nav": {
+      "platform": "Platform",
+      "operations": "Operations",
+      "administration": "Administration",
     "insights": "Insights",
     "dashboard": "Dashboard",
     "reports": "Reports",
@@ -127,7 +130,8 @@
     "access": "Access",
     "users": "Users",
     "merchants": "Merchants",
-    "merchantManagement": "Merchant management",
+      "merchantManagement": "Merchant management",
+      "branchApprovals": "Branch approvals",
     "accountExport": "Account & export",
     "audit": "Audit",
     "emailDeliverability": "Email deliverability",

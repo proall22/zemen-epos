@@ -77,7 +77,7 @@ describe('web permission mirror', () => {
 
 describe('report permissions', () => {
   it('are held by the two roles that configure reports', () => {
-    for (const role of ['MERCHANT_ADMIN', 'ACCOUNTANT'] as const) {
+    for (const role of ['MERCHANT_ADMIN', 'BRANCH_ADMIN', 'ACCOUNTANT'] as const) {
       expect(ROLE_PERMISSIONS[role]).toContain('report.view');
       expect(ROLE_PERMISSIONS[role]).toContain('report.manage');
     }

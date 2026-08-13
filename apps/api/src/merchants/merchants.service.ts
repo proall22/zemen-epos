@@ -42,6 +42,20 @@ export type MerchantWithOwner = Merchant & {
   adminCount: number;
 };
 
+/** Back-office projection for the global branch approval queue. It contains
+ *  review metadata only and never exposes EIRMS credentials. */
+export interface PendingBranchReview {
+  id: string;
+  merchantId: string;
+  merchantName: string;
+  merchantTin: string;
+  name: string;
+  systemNumber: string;
+  city: string | null;
+  region: string | null;
+  createdAt: string;
+}
+
 @Injectable()
 export class MerchantsService implements OnModuleInit {
   private readonly logger = new Logger(MerchantsService.name);
@@ -299,6 +313,7 @@ export class MerchantsService implements OnModuleInit {
   }
 
   async create(input: CreateMerchantDto): Promise<Merchant> {
+    const ctx = this.context.get();
     try {
       return await this.prisma.merchant.create({
         data: {
@@ -314,6 +329,11 @@ export class MerchantsService implements OnModuleInit {
           wereda: input.wereda?.trim() || null,
           kebele: input.kebele?.trim() || null,
           houseNumber: input.houseNumber?.trim() || null,
+          // This endpoint is back-office only. Merchants created here do not
+          // need to wait in the self-signup approval queue.
+          active: true,
+          approvedAt: new Date(),
+          approvedBy: ctx?.actorId ?? null,
         },
       });
     } catch (err) {
@@ -409,6 +429,21 @@ export class MerchantsService implements OnModuleInit {
         },
       });
       if (isFirstApproval) {
+        // The branch submitted with self-registration is part of the same
+        // review decision as the merchant. This also safely covers any old
+        // pending signup rows created before branch approval was introduced.
+        await this.prisma.branch.updateMany({
+          where: {
+            merchantId: updated.id,
+            approvedAt: null,
+            rejectedAt: null,
+          },
+          data: {
+            active: true,
+            approvedAt: new Date(),
+            approvedBy: ctx?.actorId ?? null,
+          },
+        });
         // Approval is the trigger for per-branch INSA cert onboarding. Fire
         // and forget — a Vault hiccup here must not roll back the approval,
         // and the wizard will retry on the merchant admin's next visit.
@@ -486,6 +521,33 @@ export class MerchantsService implements OnModuleInit {
 
   // ----- Branches ------------------------------------------------------------
 
+  async listPendingBranchReviews(): Promise<PendingBranchReview[]> {
+    const ctx = this.context.get();
+    if (ctx?.actorRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only the back-office can review pending branches.');
+    }
+    const rows = await this.prisma.branch.findMany({
+      where: {
+        approvedAt: null,
+        rejectedAt: null,
+        merchant: { approvedAt: { not: null }, active: true },
+      },
+      orderBy: { createdAt: 'asc' },
+      include: { merchant: { select: { legalName: true, tin: true } } },
+    });
+    return rows.map((branch) => ({
+      id: branch.id,
+      merchantId: branch.merchantId,
+      merchantName: branch.merchant.legalName,
+      merchantTin: branch.merchant.tin,
+      name: branch.name,
+      systemNumber: branch.systemNumber,
+      city: branch.city,
+      region: branch.region,
+      createdAt: branch.createdAt.toISOString(),
+    }));
+  }
+
   async branchStats(
     merchantId: string,
     branchId: string,
@@ -561,6 +623,8 @@ export class MerchantsService implements OnModuleInit {
   ): Promise<Branch> {
     this.assertOwnMerchant(merchantId);
     await this.get(merchantId); // 404 if merchant missing
+    const ctx = this.context.get();
+    const createdBySuperAdmin = ctx?.actorRole === 'SUPER_ADMIN';
     let branch: Branch;
     try {
       branch = await this.prisma.branch.create({
@@ -584,6 +648,11 @@ export class MerchantsService implements OnModuleInit {
           // the single source of truth.
           latitude: input.latitude ?? null,
           longitude: input.longitude ?? null,
+          // Tenant-created additional branches wait for Super Admin review.
+          // A back-office-created branch is approved as part of creation.
+          active: createdBySuperAdmin,
+          approvedAt: createdBySuperAdmin ? new Date() : null,
+          approvedBy: createdBySuperAdmin ? (ctx?.actorId ?? null) : null,
         },
       });
     } catch (err) {
@@ -611,7 +680,7 @@ export class MerchantsService implements OnModuleInit {
       where: { id: merchantId },
       select: { approvedAt: true, active: true },
     });
-    if (merchant?.approvedAt && merchant.active) {
+    if (merchant?.approvedAt && merchant.active && branch.approvedAt) {
       void this.certificates
         .provisionForBranch(merchantId, branch.id)
         .catch((err: Error) =>
@@ -621,6 +690,51 @@ export class MerchantsService implements OnModuleInit {
         );
     }
     return branch;
+  }
+
+  async approveBranch(merchantId: string, branchId: string): Promise<Branch> {
+    const ctx = this.context.get();
+    if (ctx?.actorRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only the back-office can approve branches.');
+    }
+    const branch = await this.prisma.branch.findFirst({ where: { id: branchId, merchantId } });
+    if (!branch) throw new NotFoundException(`Branch ${branchId} not found.`);
+    if (branch.approvedAt) throw new ConflictException('This branch is already approved.');
+    const updated = await this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        active: true,
+        approvedAt: new Date(),
+        approvedBy: ctx.actorId ?? null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null,
+      },
+    });
+    void this.certificates.provisionForBranch(merchantId, branchId).catch((err: Error) =>
+      this.logger.error(`Post-branch-approval cert provisioning failed for ${merchantId}/${branchId}: ${err.message}`),
+    );
+    return updated;
+  }
+
+  async rejectBranch(merchantId: string, branchId: string, input: RejectMerchantDto): Promise<Branch> {
+    const ctx = this.context.get();
+    if (ctx?.actorRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Only the back-office can reject branches.');
+    }
+    const branch = await this.prisma.branch.findFirst({ where: { id: branchId, merchantId } });
+    if (!branch) throw new NotFoundException(`Branch ${branchId} not found.`);
+    if (branch.approvedAt) throw new ConflictException('This branch was already approved. Disable it instead.');
+    if (branch.rejectedAt) throw new ConflictException('This branch is already rejected.');
+    return this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        active: false,
+        rejectedAt: new Date(),
+        rejectedBy: ctx.actorId ?? null,
+        rejectionReason: input.reason?.trim() || null,
+      },
+    });
   }
 
   async updateBranch(
@@ -635,6 +749,14 @@ export class MerchantsService implements OnModuleInit {
     if (!branch || branch.merchantId !== merchantId) {
       throw new NotFoundException(`Branch ${branchId} not found`);
     }
+    const ctx = this.context.get();
+    // Approval is never inferred from the generic active toggle. Tenant
+    // admins may edit onboarding details while pending, but only back-office
+    // can enable/disable an already-approved branch.
+    const activeOverride =
+      ctx?.actorRole === 'SUPER_ADMIN' && branch.approvedAt
+        ? input.active
+        : undefined;
     let updated: Branch;
     try {
       updated = await this.prisma.branch.update({
@@ -685,7 +807,7 @@ export class MerchantsService implements OnModuleInit {
           // EIRMS creds are persisted in Vault below — these columns stay
           // null. They're kept on the schema only for the brief migration
           // window and will be dropped in a follow-up migration.
-          active: input.active,
+          active: activeOverride,
           // Geo-pin: undefined = unchanged; null = explicit clear; number =
           // new value. The DTO already validates the range.
           latitude: input.latitude === undefined ? undefined : input.latitude,

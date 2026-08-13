@@ -11,6 +11,7 @@ import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import {
   MerchantsService,
   type MerchantWithOwner,
+  type PendingBranchReview,
 } from './merchants.service';
 
 /** Branch shape returned to clients — strips secret credentials. Callers see a
@@ -41,6 +42,11 @@ interface SafeBranch {
    *  row alone, so it ships alongside the cred flags. */
   hasSigningKey: boolean;
   hasCert: boolean;
+  approvedAt: Date | null;
+  approvedBy: string | null;
+  rejectedAt: Date | null;
+  rejectedBy: string | null;
+  rejectionReason: string | null;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -79,6 +85,11 @@ function toSafeBranch(
     eirmsApikeySet: credFlags.apikey,
     hasSigningKey: signing.hasSigningKey,
     hasCert: signing.hasCert,
+    approvedAt: b.approvedAt,
+    approvedBy: b.approvedBy,
+    rejectedAt: b.rejectedAt,
+    rejectedBy: b.rejectedBy,
+    rejectionReason: b.rejectionReason,
     active: b.active,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -148,6 +159,13 @@ export class MerchantsController {
 
   // ----- /merchants/:id/branches -------------------------------------------
 
+  @Get('platform/branch-approvals')
+  @RequirePermissions('merchant.create')
+  @ApiOperation({ summary: 'List additional branches awaiting Super Admin approval.' })
+  pendingBranchReviews(): Promise<PendingBranchReview[]> {
+    return this.merchants.listPendingBranchReviews();
+  }
+
   @Get('merchants/:id/branches')
   @RequirePermissions('branch.view')
   @ApiOperation({ summary: "List a merchant's branches." })
@@ -178,6 +196,22 @@ export class MerchantsController {
       await this.merchants.getBranchCredFlags(id, branch.id),
       await this.merchants.getBranchSigningFlags(id, branch.id),
     );
+  }
+
+  @Post('merchants/:id/branches/:branchId/approve')
+  @RequirePermissions('merchant.create')
+  @ApiOperation({ summary: 'Approve a pending branch (super-admin only).' })
+  async approveBranch(@Param('id') id: string, @Param('branchId') branchId: string): Promise<SafeBranch> {
+    const branch = await this.merchants.approveBranch(id, branchId);
+    return toSafeBranch(branch, await this.merchants.getBranchCredFlags(id, branch.id), await this.merchants.getBranchSigningFlags(id, branch.id));
+  }
+
+  @Post('merchants/:id/branches/:branchId/reject')
+  @RequirePermissions('merchant.create')
+  @ApiOperation({ summary: 'Reject a pending branch (super-admin only).' })
+  async rejectBranch(@Param('id') id: string, @Param('branchId') branchId: string, @Body() body: RejectMerchantDto): Promise<SafeBranch> {
+    const branch = await this.merchants.rejectBranch(id, branchId, body);
+    return toSafeBranch(branch, await this.merchants.getBranchCredFlags(id, branch.id), await this.merchants.getBranchSigningFlags(id, branch.id));
   }
 
   @Get('merchants/:id/branches/:branchId/stats')

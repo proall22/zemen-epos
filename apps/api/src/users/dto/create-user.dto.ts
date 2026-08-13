@@ -15,6 +15,7 @@ import {
 export const ASSIGNABLE_ROLES = [
   'SUPER_ADMIN',
   'MERCHANT_ADMIN',
+  'BRANCH_ADMIN',
   'ACCOUNTANT',
   'STORE_KEEPER',
   'CASHIER',
@@ -24,6 +25,7 @@ export const ASSIGNABLE_ROLES = [
 // Roles that can be assigned by non-SUPER_ADMIN users
 export const REGULAR_ROLES = [
   'MERCHANT_ADMIN',
+  'BRANCH_ADMIN',
   'ACCOUNTANT',
   'STORE_KEEPER',
   'CASHIER',
@@ -74,7 +76,7 @@ export class CreateUserDto {
   merchantId?: string;
 
   /**
-   * Multi-branch access grant for CASHIER / ACCOUNTANT / SUPPORT. Each id
+   * Branch access grant for BRANCH_ADMIN and other branch-scoped roles. Each id
    * becomes a UserBranch row so the user can switch between them via the
    * branch switcher. Ignored for MERCHANT_ADMIN (implicit access to every
    * branch of the merchant). Empty array = no branch access (user can sign
@@ -83,7 +85,7 @@ export class CreateUserDto {
   @ApiPropertyOptional({
     type: [String],
     description:
-      'Branch ids this user may act as. Multiple = switchable via the branch picker. Ignored for MERCHANT_ADMIN.',
+      'Branch ids this user may act as. BRANCH_ADMIN requires exactly one. Ignored for MERCHANT_ADMIN.',
   })
   @IsOptional()
   @IsArray()

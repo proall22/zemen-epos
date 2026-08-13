@@ -55,6 +55,7 @@ type LogRow =
       at: string;
       itemCode: string;
       itemDescription: string;
+      itemImageUrl: string | null;
       quantity: number;
       fromStore: string | null;
       toStore: string | null;
@@ -87,6 +88,7 @@ function fold(rows: StockMovementRow[]): LogRow[] {
         at: r.createdAt,
         itemCode: r.itemCode,
         itemDescription: r.itemDescription,
+        itemImageUrl: r.itemImageUrl,
         quantity: Math.abs(r.delta),
         fromStore: from?.storeName ?? null,
         toStore: to?.storeName ?? null,
@@ -252,6 +254,7 @@ export function InventoryMovementsPage() {
                         <ItemCell
                           code={r.itemCode}
                           description={r.itemDescription}
+                          imageUrl={r.itemImageUrl}
                         />
                       </TableCell>
                       <TableCell>
@@ -287,6 +290,7 @@ export function InventoryMovementsPage() {
                         <ItemCell
                           code={r.row.itemCode}
                           description={r.row.itemDescription}
+                          imageUrl={r.row.itemImageUrl}
                         />
                       </TableCell>
                       <TableCell>
@@ -343,14 +347,25 @@ export function InventoryMovementsPage() {
 function ItemCell({
   code,
   description,
+  imageUrl,
 }: {
   code: string;
   description: string;
+  imageUrl: string | null;
 }) {
   return (
-    <div className="flex flex-col">
-      <span className="font-medium">{description}</span>
-      <span className="font-mono text-[11px] text-muted-foreground">{code}</span>
+    <div className="flex min-w-48 items-center gap-3">
+      <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted text-sm font-semibold text-muted-foreground">
+        {imageUrl ? (
+          <img src={imageUrl} alt="" loading="lazy" className="size-full object-cover" />
+        ) : (
+          description.trim().charAt(0).toUpperCase() || "?"
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <span className="font-medium">{description}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{code}</span>
+      </div>
     </div>
   );
 }

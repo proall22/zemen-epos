@@ -19,9 +19,9 @@
   --popover: #FFFFFF;
   --popover-foreground: #111827;
   
-  --primary: #4F46E5;
+  --primary: #1E3A8A;
   --primary-foreground: #FFFFFF;
-  --primary-hover: #4338CA;
+  --primary-hover: #172554;
   
   --secondary: #FFFFFF;
   --secondary-foreground: #6B7280;
@@ -43,10 +43,10 @@
   
   --border: #E5E7EB;
   --input: #E5E7EB;
-  --ring: #4F46E5;
+  --ring: #1E3A8A;
   
   --sidebar: #FFFFFF;
-  --sidebar-active: #EEF2FF;
+  --sidebar-active: #EFF6FF;
 }
 
 .dark {
@@ -56,7 +56,7 @@
   --card-foreground: #F9FAFB;
   --popover: #1F2937;
   --popover-foreground: #F9FAFB;
-  --primary: #4F46E5;
+  --primary: #3B82F6;
   --primary-foreground: #FFFFFF;
   --secondary: #374151;
   --secondary-foreground: #9CA3AF;
@@ -68,7 +68,7 @@
   --destructive-foreground: #FFFFFF;
   --border: #374151;
   --input: #374151;
-  --ring: #4F46E5;
+  --ring: #3B82F6;
 }
 
 @theme inline {

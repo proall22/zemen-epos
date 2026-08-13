@@ -1153,6 +1153,21 @@ export function createBranch(
   });
 }
 
+export function approveBranch(merchantId: string, branchId: string): Promise<SafeBranch> {
+  return api<SafeBranch>(`/merchants/${merchantId}/branches/${branchId}/approve`, { method: "POST" });
+}
+
+export function listPendingBranchReviews(): Promise<import("./types").PendingBranchReview[]> {
+  return api<import("./types").PendingBranchReview[]>("/platform/branch-approvals");
+}
+
+export function rejectBranch(merchantId: string, branchId: string, reason?: string): Promise<SafeBranch> {
+  return api<SafeBranch>(`/merchants/${merchantId}/branches/${branchId}/reject`, {
+    method: "POST",
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+}
+
 export function updateBranch(
   merchantId: string,
   branchId: string,

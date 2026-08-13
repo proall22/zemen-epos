@@ -95,6 +95,7 @@ export function ScheduledReportFormSheet({
   onSaved,
 }: ScheduledReportFormSheetProps) {
   const { availableBranches, user } = useAuth();
+  const isBranchAdmin = user?.role === "BRANCH_ADMIN";
   const [form, setForm] = useState<FormState>(BLANK);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<{ title: string; items: string[] } | null>(
@@ -120,13 +121,15 @@ export function ScheduledReportFormSheet({
     } else if (mode === "create") {
       setForm({
         ...BLANK,
+        allBranches: !isBranchAdmin,
+        branchId: isBranchAdmin ? (availableBranches[0]?.id ?? "") : "",
         recipients: user?.email ? [user.email.toLowerCase()] : [],
       });
     }
     setDraft("");
     setError(null);
     setBusy(false);
-  }, [mode, report?.id]);
+  }, [mode, report?.id, isBranchAdmin, availableBranches]);
 
   const open = mode !== null;
 
@@ -336,6 +339,7 @@ export function ScheduledReportFormSheet({
                   active={form.allBranches}
                   onClick={() => set("allBranches", true)}
                   label="All branches"
+                  disabled={isBranchAdmin}
                 />
                 <ChoiceButton
                   active={!form.allBranches}
@@ -348,6 +352,7 @@ export function ScheduledReportFormSheet({
                   value={form.branchId}
                   onChange={(e) => set("branchId", e.target.value)}
                   className="h-9 rounded-md border bg-background px-2 text-sm"
+                  disabled={isBranchAdmin}
                 >
                   <option value="">Select a branch…</option>
                   {availableBranches.map((b) => (
@@ -478,15 +483,18 @@ function ChoiceButton({
   active,
   onClick,
   label,
+  disabled = false,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
       className={cn(
         "rounded-md border px-3 py-1.5 text-sm transition-colors",

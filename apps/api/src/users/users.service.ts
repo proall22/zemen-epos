@@ -138,6 +138,11 @@ export class UsersService implements OnModuleInit {
     }
 
     const ids = (branchIds ?? []).map((id) => id.trim()).filter(Boolean);
+    if (role === 'BRANCH_ADMIN' && ids.length !== 1) {
+      throw new ConflictException(
+        'A branch administrator must be assigned to exactly one branch.',
+      );
+    }
     for (const id of ids) {
       await this.assertBranchUsable(merchantId, id);
     }

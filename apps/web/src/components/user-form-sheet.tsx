@@ -122,6 +122,13 @@ export function UserFormSheet({
       });
       return;
     }
+    if (role === "BRANCH_ADMIN" && branchIds.length !== 1) {
+      setError({
+        title: "Assign exactly one branch to a branch administrator.",
+        items: ["Branch administrators are deliberately restricted to one operational branch."],
+      });
+      return;
+    }
     setBusy(true);
     const effectiveBranchIds = isMerchantAdmin ? [] : branchIds;
     const activeGrantedIds = branchIds.filter(
@@ -251,9 +258,10 @@ export function UserFormSheet({
               ) : (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Pick every branch this user may act as. The user switches
-                    between them from the top-left branch switcher. Marking one
-                    as the pinned default auto-selects it on login.
+                    {role === "BRANCH_ADMIN"
+                      ? "Pick the single branch this administrator manages."
+                      : "Pick every branch this user may act as. The user switches"}
+                    {role !== "BRANCH_ADMIN" && " between them from the top-left branch switcher. Marking one as the pinned default auto-selects it on login."}
                   </p>
                   <div className="flex flex-col divide-y overflow-hidden rounded-md border text-sm">
                     {visibleBranches.map((b) => {

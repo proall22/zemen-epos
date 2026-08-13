@@ -24,7 +24,9 @@ export interface SystemSummary {
     active: number;
     pending: number;
     rejected: number;
+    suspended: number;
   };
+  tenants: { totalBranches: number; activeBranches: number; activeUsers: number };
   documents: {
     invoicesToday: number;
     invoicesThisMonth: number;
@@ -45,6 +47,7 @@ export interface SystemSummary {
     createdAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
+    mainBranch: { id: string; name: string; city: string | null; region: string | null } | null;
   }>;
   recentAuditLogs: Array<{
     id: string;
@@ -103,7 +106,6 @@ export interface AccountantSummary {
   collected: number;
   outstanding: number;
   withholding: number;
-  withholdingPending: number;
   recentReceipts: Array<{
     id: string;
     receiptNumber: string;
@@ -190,9 +192,18 @@ export class DashboardService {
     const endOfLastMonth = startOfThisMonth;
     const scope = listScope(this.context.get(), opts);
     const merchantOnly = merchantScope(this.context.get());
-    const userScope = merchantOnly.merchantId
-      ? { active: true, merchantId: merchantOnly.merchantId }
-      : { active: true };
+    const userScope = scope.branchId
+      ? {
+          active: true,
+          merchantId: merchantOnly.merchantId,
+          OR: [
+            { branchId: scope.branchId },
+            { branchAccess: { some: { branchId: scope.branchId } } },
+          ],
+        }
+      : merchantOnly.merchantId
+        ? { active: true, merchantId: merchantOnly.merchantId }
+        : { active: true };
 
     const [
       today,
@@ -245,7 +256,10 @@ export class DashboardService {
     // then keep only items whose total on-hand <= lowStockThreshold.
     const stockAgg = await this.prisma.inventoryStock.groupBy({
       by: ['inventoryItemId'],
-      where: { inventoryItem: { ...merchantOnly, trackStock: true, active: true } },
+      where: {
+        inventoryItem: { ...merchantOnly, trackStock: true, active: true },
+        ...(scope.branchId ? { store: { branchId: scope.branchId } } : {}),
+      },
       _sum: { quantity: true },
     });
     const lowStockItemIds = stockAgg
@@ -268,14 +282,20 @@ export class DashboardService {
       })
       .filter(item => item.onHand <= item.lowStockThreshold);
 
-    const branches = await this.prisma.branch.findMany({ where: { ...merchantOnly, active: true } });
+    const branches = await this.prisma.branch.findMany({
+      where: {
+        ...merchantOnly,
+        active: true,
+        ...(scope.branchId ? { id: scope.branchId } : {}),
+      },
+    });
     // A branch is EIRMS-configured when eirmsApikey, eirmsClientId and eirmsClientSecret are set.
     const configured = branches.some(b => !!b.eirmsApikey && !!b.eirmsClientId && !!b.eirmsClientSecret);
     
     const [invoicesRegistered, pending, failed] = await Promise.all([
-      this.prisma.invoice.count({ where: { ...merchantOnly, status: 'ACCEPTED' } }),
-      this.prisma.invoiceDraft.count({ where: { ...merchantOnly, status: 'PENDING' } }),
-      this.prisma.invoiceDraft.count({ where: { ...merchantOnly, status: 'SYNC_FAILED' } }),
+      this.prisma.invoice.count({ where: { ...scope, status: 'ACCEPTED' } }),
+      this.prisma.invoiceDraft.count({ where: { ...scope, status: 'PENDING' } }),
+      this.prisma.invoiceDraft.count({ where: { ...scope, status: 'SYNC_FAILED' } }),
     ]);
     const eirmsCompliance = {
       configured,
@@ -430,7 +450,6 @@ export class DashboardService {
       collected,
       outstanding,
       withholding: withholdAgg._sum.collectedAmount ?? 0,
-      withholdingPending: 0, // Mock for pending withholding
       recentReceipts: recentReceipts.map(r => ({
         id: r.id,
         receiptNumber: r.receiptNumber,
@@ -466,6 +485,10 @@ export class DashboardService {
       activeMerchants,
       pendingMerchants,
       rejectedMerchants,
+      suspendedMerchants,
+      totalBranches,
+      activeBranches,
+      activeUsers,
       invoicesToday,
       invoicesThisMonth,
       invoicesAllTime,
@@ -483,6 +506,10 @@ export class DashboardService {
         where: { approvedAt: null, rejectedAt: null },
       }),
       this.prisma.merchant.count({ where: { rejectedAt: { not: null } } }),
+      this.prisma.merchant.count({ where: { approvedAt: { not: null }, active: false } }),
+      this.prisma.branch.count(),
+      this.prisma.branch.count({ where: { active: true, approvedAt: { not: null } } }),
+      this.prisma.user.count({ where: { active: true } }),
       this.prisma.invoice.count({
         where: { status: 'ACCEPTED', createdAt: { gte: startOfToday } },
       }),
@@ -518,6 +545,11 @@ export class DashboardService {
             orderBy: { createdAt: 'asc' },
             take: 1,
             select: { email: true, name: true },
+          },
+          branches: {
+            orderBy: { createdAt: 'asc' },
+            take: 1,
+            select: { id: true, name: true, city: true, region: true },
           },
         },
       }),
@@ -556,7 +588,9 @@ export class DashboardService {
         active: activeMerchants,
         pending: pendingMerchants,
         rejected: rejectedMerchants,
+        suspended: suspendedMerchants,
       },
+      tenants: { totalBranches, activeBranches, activeUsers },
       documents: {
         invoicesToday,
         invoicesThisMonth,
@@ -577,6 +611,7 @@ export class DashboardService {
         createdAt: m.createdAt.toISOString(),
         ownerEmail: m.users[0]?.email ?? null,
         ownerName: m.users[0]?.name ?? null,
+        mainBranch: m.branches[0] ?? null,
       })),
       recentAuditLogs: recentAuditLogsRaw.map((l) => ({
         id: l.id,
@@ -595,16 +630,10 @@ export class DashboardService {
   }
 
   async systemHealth(): Promise<SystemHealthSummary> {
-    const healthReport = await this.health.check();
-    
-    // We would fetch real queue stats from BullMQ in a complete implementation.
-    // Here we provide a mock reflecting the requested system health display.
-    const queue = {
-      pending: 42,
-      processing: 8,
-      completed: 14821,
-      failed: 12,
-    };
+    const [healthReport, queue] = await Promise.all([
+      this.health.check(),
+      this.health.queueCounts(),
+    ]);
 
     // Query audit log for failed login attempts (inbound, success = false)
     const [failedLogins, lockedAccounts] = await Promise.all([

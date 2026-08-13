@@ -15,6 +15,7 @@ enum UserRole {
   SUPER_ADMIN
   ADMIN // legacy — no new assignments, kept so old rows still type-check
   MERCHANT_ADMIN // tenant administrator: manages their merchant's branches + EIRMS creds + users
+  BRANCH_ADMIN // operational administrator restricted to explicitly granted branches
   ACCOUNTANT // bookkeeping role: inventory + buyers + invoice/receipt operations, no tenant admin
   STORE_KEEPER // inventory/stores/purchases/vendors + write-offs; no sales, buyers, or tenant admin
   CASHIER
@@ -122,6 +123,14 @@ model Branch {
   // pre-policy behaviour (sales proceed on negative stock).
   stockPolicy BranchStockPolicy @default(BLOCK_ON_EMPTY)
 
+  // Merchant-created branches require a back-office decision. The initial
+  // signup branch is approved together with its merchant; branches created
+  // directly by SUPER_ADMIN are approved immediately.
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -238,7 +247,7 @@ model User {
   @@map("users")
 }
 
-/// Multi-branch access grant. A CASHIER/ACCOUNTANT/SUPPORT user with rows
+/// Branch access grant. BRANCH_ADMIN and other branch-scoped users with rows
 /// here may switch between the listed branches at will. MERCHANT_ADMIN
 /// derives access from role + merchantId and doesn't need rows; SUPER_ADMIN
 /// bypasses this table entirely (cross-tenant).

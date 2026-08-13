@@ -69,7 +69,7 @@ export function InventoryGrid({
             <EmptyHint />
           )
         ) : (
-          <div className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 pb-4 min-[420px]:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4">
             {items.map((item) => (
               <ItemCard
                 key={item.id}
@@ -168,17 +168,17 @@ function ItemCard({
         </div>
       </div>
 
-      <div className="flex flex-col gap-1 p-3">
-        <span className="line-clamp-1 text-sm font-medium leading-tight">
+      <div className="flex min-w-0 flex-col gap-1 p-3">
+        <span className="line-clamp-2 min-h-10 break-words text-sm font-medium leading-tight">
           {item.description}
           {nonTaxableSuffix(item.taxCode)}
         </span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           {item.sku ?? item.code}
         </span>
-        <div className="mt-1 flex items-baseline justify-between gap-2">
-          <span className="text-lg font-semibold tabular-nums truncate">
-            {item.unitPrice.toFixed(2)}
+        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+          <span className="min-w-0 break-all text-base font-semibold tabular-nums sm:text-lg">
+            {item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground shrink-0">
             {item.taxCode}

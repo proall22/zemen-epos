@@ -15,6 +15,7 @@ export interface MovementRow {
   inventoryItemId: string;
   itemCode: string;
   itemDescription: string;
+  itemImageUrl: string | null;
   storeId: string | null;
   storeName: string | null;
   branchName: string | null;
@@ -71,7 +72,7 @@ export class MovementsService {
     const rows = await this.prisma.stockMovement.findMany({
       where,
       include: {
-        inventoryItem: { select: { code: true, description: true } },
+        inventoryItem: { select: { code: true, description: true, imageUrl: true } },
         store: {
           select: { name: true, branch: { select: { name: true } } },
         },
@@ -93,6 +94,7 @@ export class MovementsService {
         inventoryItemId: r.inventoryItemId,
         itemCode: r.inventoryItem.code,
         itemDescription: r.inventoryItem.description,
+        itemImageUrl: r.inventoryItem.imageUrl,
         storeId: r.storeId,
         storeName: r.store?.name ?? null,
         branchName: r.store?.branch.name ?? null,

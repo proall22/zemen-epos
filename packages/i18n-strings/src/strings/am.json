@@ -23,6 +23,9 @@
     "amharic": "አማርኛ"
   },
   "nav": {
+      "platform": "መድረክ",
+      "operations": "ኦፕሬሽኖች",
+      "administration": "አስተዳደር",
     "insights": "ግንዛቤዎች",
     "dashboard": "ዳሽቦርድ",
     "reports": "ሪፖርቶች",
@@ -38,7 +41,8 @@
     "purchases": "ግዢዎች",
     "access": "መዳረሻ",
     "users": "ተጠቃሚዎች",
-    "merchants": "ነጋዴዎች",
+      "merchants": "ነጋዴዎች",
+      "branchApprovals": "የቅርንጫፍ ማጽደቂያዎች",
     "accountExport": "መለያ እና ወደ ውጭ ማውጣት",
     "audit": "ኦዲት",
     "emailDeliverability": "የኢሜይል ደረሶነት",

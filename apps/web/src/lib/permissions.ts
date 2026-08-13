@@ -20,6 +20,9 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   "branch.view",
   "branch.create",
   "branch.update",
+  "user.view",
+  "user.create",
+  "user.update",
   "audit.view",
   "deliverability.view",
   "translation.manage",
@@ -121,6 +124,35 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     "report.view",
     "report.manage",
   ],
+  BRANCH_ADMIN: [
+    "dashboard.view",
+    "inventory.view",
+    "inventory.create",
+    "inventory.update",
+    "inventory.delete",
+    "buyer.view",
+    "buyer.create",
+    "buyer.update",
+    "buyer.delete",
+    "invoice.view",
+    "invoice.create",
+    "invoice.update",
+    "receipt.view",
+    "receipt.create",
+    "withholding.view",
+    "branch.view",
+    "store.view",
+    "store.create",
+    "store.update",
+    "vendor.view",
+    "vendor.create",
+    "vendor.update",
+    "purchase.view",
+    "purchase.create",
+    "writeoff.create",
+    "report.view",
+    "report.manage",
+  ],
   // Bookkeeping role — operational only, no tenant admin.
   ACCOUNTANT: [
     "dashboard.view",
@@ -186,7 +218,15 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     "receipt.view",
     "withholding.view",
   ],
-  ADMIN: [], // legacy
+  // Compatibility until legacy branch-manager rows migrate to BRANCH_ADMIN.
+  ADMIN: [
+    "dashboard.view", "inventory.view", "inventory.create", "inventory.update",
+    "inventory.delete", "buyer.view", "buyer.create", "buyer.update", "buyer.delete",
+    "invoice.view", "invoice.create", "invoice.update", "receipt.view", "receipt.create",
+    "withholding.view", "branch.view", "store.view", "store.create", "store.update",
+    "vendor.view", "vendor.create", "vendor.update", "purchase.view", "purchase.create",
+    "writeoff.create", "report.view", "report.manage",
+  ],
 };
 
 export function hasPermission(

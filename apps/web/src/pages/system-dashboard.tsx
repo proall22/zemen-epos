@@ -17,6 +17,8 @@ import {
   ScrollText,
   Server,
   ShieldCheck,
+  Store,
+  Users,
   XCircle,
 } from "lucide-react";
 
@@ -40,7 +42,6 @@ import {
 import {
   getSystemHealthSummary,
   getSystemSummary,
-  listMerchants,
   rejectMerchant,
   updateMerchant,
 } from "@/lib/resources";
@@ -123,7 +124,7 @@ export function SystemDashboardPage() {
             Zemen-ePos · Platform
           </span>
           <h1 className="flex items-center gap-2 text-3xl font-semibold tracking-tight">
-            <ShieldCheck className="size-6 text-[#5700FF]" />
+            <ShieldCheck className="size-6 text-primary" />
             System Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -179,10 +180,22 @@ export function SystemDashboardPage() {
           />
           <StatCard
             icon={XCircle}
-            label="Rejected"
-            value={data?.merchants.rejected}
-            hint="Declined signups"
+            label="Suspended"
+            value={data?.merchants.suspended}
+            hint="Approved but disabled"
             tone="rose"
+          />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard icon={Store} label="Total Branches" value={data?.tenants.totalBranches} hint={`${data?.tenants.activeBranches ?? 0} active`} />
+          <StatCard icon={Users} label="Active Users" value={data?.tenants.activeUsers} />
+          <StatCard icon={XCircle} label="Rejected Applications" value={data?.merchants.rejected} tone="rose" />
+          <StatCard
+            icon={CheckCircle2}
+            label="Invoice Success Rate"
+            value={data ? Math.round((data.documents.invoicesAllTime / Math.max(1, data.documents.invoicesAllTime + data.platformActivity.failedInvoices)) * 100) : undefined}
+            hint="Percent accepted"
+            tone="emerald"
           />
         </div>
       </section>
@@ -282,6 +295,7 @@ export function SystemDashboardPage() {
                   <TableHead>Merchant</TableHead>
                   <TableHead>TIN</TableHead>
                   <TableHead>Owner</TableHead>
+                  <TableHead>Main branch</TableHead>
                   <TableHead>Registered</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -312,6 +326,17 @@ export function SystemDashboardPage() {
                             {m.ownerEmail}
                           </span>
                         )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-sm">{m.mainBranch?.name ?? "—"}</span>
+                        {(m.mainBranch?.city || m.mainBranch?.region) && (
+                          <span className="text-xs text-muted-foreground">
+                            {[m.mainBranch.city, m.mainBranch.region].filter(Boolean).join(", ")}
+                          </span>
+                        )}
+                        {m.mainBranch && <Badge variant="warning" className="mt-1 w-fit">Approved with merchant</Badge>}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -581,7 +606,7 @@ export function SystemDashboardPage() {
                     <TableCell>
                       <div className="h-2 w-full rounded-full bg-muted">
                         <div
-                          className="h-2 rounded-full bg-[#5700FF]"
+                          className="h-2 rounded-full bg-primary"
                           style={{
                             width: `${maxVolume > 0
                               ? Math.max(
@@ -622,13 +647,13 @@ function StatCard({
   tone?: "default" | "emerald" | "amber" | "rose";
 }) {
   const toneClass = {
-    default: "text-[#5700FF]",
+    default: "text-blue-800 dark:text-blue-300",
     emerald: "text-emerald-600",
     amber: "text-amber-600",
     rose: "text-rose-600",
   }[tone];
   const bgClass = {
-    default: "bg-muted",
+    default: "bg-blue-50 dark:bg-blue-950/40",
     emerald: "bg-emerald-50 dark:bg-emerald-950/30",
     amber: "bg-amber-50 dark:bg-amber-950/30",
     rose: "bg-rose-50 dark:bg-rose-950/30",

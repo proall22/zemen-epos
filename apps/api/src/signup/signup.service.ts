@@ -73,6 +73,8 @@ export class SignupService {
             name: branchName,
             latitude: input.branch?.latitude ?? null,
             longitude: input.branch?.longitude ?? null,
+            active: false,
+            approvedAt: null,
           },
         });
         // Stock has to land somewhere — without this every inventory write at

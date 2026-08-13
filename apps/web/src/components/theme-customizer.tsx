@@ -11,18 +11,23 @@ const THEMES = [
   { name: "Emerald", color: "#10B981", hover: "#059669" },
   { name: "Amber", color: "#F59E0B", hover: "#D97706" },
   { name: "Slate", color: "#475569", hover: "#334155" },
+  { name: "Violet", color: "#7C3AED", hover: "#6D28D9" },
+  { name: "Teal", color: "#0F766E", hover: "#115E59" },
+  { name: "Orange", color: "#EA580C", hover: "#C2410C" },
+  { name: "Blue", color: "#2563EB", hover: "#1D4ED8" },
 ];
 
 export function ThemeCustomizer() {
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem("app-theme-color") || "#4F46E5";
   });
+  const [customColor, setCustomColor] = useState(theme);
 
   useEffect(() => {
-    const selected = THEMES.find((t) => t.color === theme) || THEMES[0];
-    document.documentElement.style.setProperty("--primary", selected.color);
-    document.documentElement.style.setProperty("--primary-hover", selected.hover);
-    document.documentElement.style.setProperty("--ring", selected.color);
+    const selected = THEMES.find((t) => t.color === theme);
+    document.documentElement.style.setProperty("--primary", theme);
+    document.documentElement.style.setProperty("--primary-hover", selected?.hover ?? theme);
+    document.documentElement.style.setProperty("--ring", theme);
     localStorage.setItem("app-theme-color", theme);
   }, [theme]);
 
@@ -54,6 +59,19 @@ export function ThemeCustomizer() {
               </button>
             ))}
           </div>
+          <label className="flex items-center justify-between gap-3 rounded-lg border p-2 text-[13px] font-medium">
+            Custom color
+            <input
+              type="color"
+              value={customColor}
+              onChange={(event) => {
+                setCustomColor(event.target.value);
+                setTheme(event.target.value.toUpperCase());
+              }}
+              className="h-8 w-12 cursor-pointer rounded border bg-transparent p-0.5"
+              aria-label="Choose a custom theme color"
+            />
+          </label>
         </div>
       </PopoverContent>
     </Popover>

@@ -63,6 +63,9 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   'branch.view',
   'branch.create',
   'branch.update',
+  'user.view',
+  'user.create',
+  'user.update',
   'audit.view',
   'deliverability.view',
   'translation.manage',
@@ -183,12 +186,47 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     'report.manage',
   ],
   /**
+   * Branch operator. Every query is pinned by RequestContext to the single
+   * granted branch. They run sales and stock operations but cannot modify the
+   * merchant, branch credentials, users, consent, or platform settings.
+   */
+  BRANCH_ADMIN: [
+    'dashboard.view',
+    'inventory.view',
+    'inventory.create',
+    'inventory.update',
+    'inventory.delete',
+    'buyer.view',
+    'buyer.create',
+    'buyer.update',
+    'buyer.delete',
+    'invoice.view',
+    'invoice.create',
+    'invoice.update',
+    'receipt.view',
+    'receipt.create',
+    'withholding.view',
+    'branch.view',
+    'store.view',
+    'store.create',
+    'store.update',
+    'vendor.view',
+    'vendor.create',
+    'vendor.update',
+    'purchase.view',
+    'purchase.create',
+    'writeoff.create',
+    'report.view',
+    'report.manage',
+  ],
+  /**
    * Bookkeeping role. Manages inventory + buyers, registers invoices, files
    * withholding receipts. No tenant administration — can't manage branches'
    * settings/EIRMS creds or users, but can *see* the branch list (read-only)
    * to switch between branches. Reports to a MERCHANT_ADMIN.
    */
   ACCOUNTANT: [
+    'dashboard.view',
     'inventory.view',
     'inventory.create',
     'inventory.update',
@@ -212,8 +250,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     'purchase.view',
     'purchase.create',
     'writeoff.create',
-    // Scheduled reports are the accountant's main reason to be here — they
-    // have no dashboard access, so this is their aggregate view.
+    // Scheduled reports complement the accountant's financial dashboard.
     'report.view',
     'report.manage',
   ],
@@ -236,6 +273,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     'writeoff.create',
   ],
   CASHIER: [
+    'dashboard.view',
     'inventory.view',
     'buyer.view',
     'buyer.create',
@@ -254,8 +292,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
     'receipt.view',
     'withholding.view',
   ],
-  // Legacy — kept so old rows still type-check; grants nothing.
-  ADMIN: [],
+  // Compatibility until branch-bound legacy rows migrate to BRANCH_ADMIN.
+  ADMIN: [
+    'dashboard.view', 'inventory.view', 'inventory.create', 'inventory.update',
+    'inventory.delete', 'buyer.view', 'buyer.create', 'buyer.update', 'buyer.delete',
+    'invoice.view', 'invoice.create', 'invoice.update', 'receipt.view', 'receipt.create',
+    'withholding.view', 'branch.view', 'store.view', 'store.create', 'store.update',
+    'vendor.view', 'vendor.create', 'vendor.update', 'purchase.view', 'purchase.create',
+    'writeoff.create', 'report.view', 'report.manage',
+  ],
 };
 
 /**

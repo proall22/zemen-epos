@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   Loader2,
   ShieldCheck,
-  Sparkles,
   Workflow,
 } from "lucide-react";
 
@@ -52,20 +51,7 @@ export function SignupPage() {
 
 function BrandSide() {
   return (
-    <aside className="relative hidden overflow-hidden bg-[#5700FF] text-white lg:flex lg:flex-col">
-      <div
-        aria-hidden
-        className="absolute -right-32 -top-32 size-96 rounded-full bg-white/10 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute -bottom-40 -left-32 size-[28rem] rounded-full bg-fuchsia-400/30 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.06] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]"
-      />
-
+    <aside className="relative hidden overflow-hidden bg-[#111827] text-white lg:flex lg:flex-col">
       <div className="relative z-10 flex flex-1 flex-col justify-between p-12">
         <header className="flex items-center gap-3">
           <ZemenEPosLogo mono className="h-6 w-auto text-white" />
@@ -75,7 +61,6 @@ function BrandSide() {
 
         <div className="flex max-w-md flex-col gap-6">
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em]">
-            <Sparkles className="size-3" />
             Self-onboarding
           </span>
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
@@ -523,7 +508,7 @@ function FormSide({
               type="button"
               onClick={handleSubmit}
               disabled={busy}
-              className="bg-[#5700FF] text-white hover:bg-[#5700FF]/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {busy && <Loader2 className="size-4 animate-spin" />}
               {busy ? "Creating account…" : "Create account"}
@@ -532,7 +517,7 @@ function FormSide({
             <Button
               type="button"
               onClick={goNext}
-              className="bg-[#5700FF] text-white hover:bg-[#5700FF]/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Continue
               <ArrowRight className="size-4" />
@@ -544,7 +529,7 @@ function FormSide({
           Already onboarded?{" "}
           <Link
             to="/login"
-            className="font-medium text-[#5700FF] underline-offset-2 hover:underline"
+            className="font-medium text-primary underline-offset-2 hover:underline"
           >
             Sign in
           </Link>
@@ -580,7 +565,7 @@ function Stepper({
             className={cn(
               "flex flex-1 items-center gap-2",
               i > 0 && "before:mx-1 before:h-px before:flex-1 before:bg-border",
-              i > 0 && state !== "upcoming" && "before:bg-[#5700FF]/40",
+              i > 0 && state !== "upcoming" && "before:bg-primary/40",
             )}
           >
             <button
@@ -599,8 +584,8 @@ function Stepper({
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors",
                   state === "current" &&
-                    "bg-[#5700FF] text-white ring-4 ring-[#5700FF]/15",
-                  state === "done" && "bg-[#5700FF]/10 text-[#5700FF]",
+                    "bg-primary text-primary-foreground ring-4 ring-primary/15",
+                  state === "done" && "bg-primary/10 text-primary",
                   state === "upcoming" &&
                     "border border-border bg-background text-muted-foreground",
                 )}

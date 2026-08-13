@@ -43,7 +43,7 @@ export function LoginPage() {
 function BrandSide() {
   const { t } = useTranslation();
   return (
-    <aside className="relative hidden overflow-hidden bg-[#1E1B4B] text-white lg:flex lg:flex-col">
+    <aside className="relative hidden overflow-hidden bg-[#111827] text-white lg:flex lg:flex-col">
 
       <div className="relative z-10 flex flex-1 flex-col justify-between p-12">
         <header className="flex items-center gap-3">
@@ -200,7 +200,7 @@ function FormSide({
         <p className="text-center text-xs text-muted-foreground">
           <Link
             to="/forgot-password"
-            className="font-medium text-[#5700FF] underline-offset-2 hover:underline"
+            className="font-medium text-primary underline-offset-2 hover:underline"
           >
             {t("auth.login.forgot")}
           </Link>
@@ -210,7 +210,7 @@ function FormSide({
           {t("auth.login.signupHint")}{" "}
           <Link
             to="/signup"
-            className="font-medium text-[#5700FF] underline-offset-2 hover:underline"
+            className="font-medium text-primary underline-offset-2 hover:underline"
           >
             {t("auth.login.signupLink")}
           </Link>

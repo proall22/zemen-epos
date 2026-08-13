@@ -32,8 +32,9 @@ export class ReportsService {
 
   async list(merchantId: string): Promise<ScheduledReport[]> {
     this.assertOwnMerchant(merchantId);
+    const branchId = this.branchAdminBranchId();
     return this.prisma.scheduledReport.findMany({
-      where: { merchantId },
+      where: { merchantId, ...(branchId ? { branchId } : {}) },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -248,7 +249,13 @@ export class ReportsService {
     }
 
     const branchScope = dto.branchScope ?? 'MERCHANT_WIDE';
-    const branchId = branchScope === 'SINGLE_BRANCH' ? dto.branchId : undefined;
+    const restrictedBranchId = this.branchAdminBranchId();
+    if (restrictedBranchId && branchScope !== 'SINGLE_BRANCH') {
+      throw new ForbiddenException(
+        'Branch administrators may create reports only for their assigned branch.',
+      );
+    }
+    const branchId = restrictedBranchId ?? (branchScope === 'SINGLE_BRANCH' ? dto.branchId : undefined);
     if (branchScope === 'SINGLE_BRANCH') {
       if (!branchId) {
         throw new BadRequestException('branchId is required for SINGLE_BRANCH.');
@@ -291,10 +298,21 @@ export class ReportsService {
       where: { id: reportId },
     });
     // 404 not 403: a 403 confirms the id exists, making ids enumerable.
-    if (!row || row.merchantId !== merchantId) {
+    const restrictedBranchId = this.branchAdminBranchId();
+    if (!row || row.merchantId !== merchantId || (restrictedBranchId && row.branchId !== restrictedBranchId)) {
       throw new NotFoundException(`Scheduled report ${reportId} not found`);
     }
     return row;
+  }
+
+  /** Returns the mandatory branch boundary for a BRANCH_ADMIN request. */
+  private branchAdminBranchId(): string | undefined {
+    const ctx = this.context.get();
+    if (ctx?.actorRole !== 'BRANCH_ADMIN') return undefined;
+    if (!ctx.branchId) {
+      throw new ForbiddenException('Branch administrator context is missing its assigned branch.');
+    }
+    return ctx.branchId;
   }
 
   private async assertBranchOwned(

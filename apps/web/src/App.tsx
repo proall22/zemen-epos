@@ -18,6 +18,7 @@ import { AdminTranslationsPage } from "@/pages/admin-translations";
 import { AuditPage } from "@/pages/audit";
 import { EmailDeliverabilityPage } from "@/pages/email-deliverability";
 import { DashboardPage } from "@/pages/dashboard";
+import { BranchApprovalsPage } from "@/pages/branch-approvals";
 import { InventoryPage } from "@/pages/inventory";
 import { ScheduledReportsPage } from "@/pages/scheduled-reports";
 import { InventoryPurchasesPage } from "@/pages/inventory-purchases";
@@ -222,6 +223,10 @@ export default function App() {
                 element={
                   <Guarded path="/merchants"><MerchantsPage /></Guarded>
                 }
+              />
+              <Route
+                path="/branch-approvals"
+                element={<Guarded path="/branch-approvals"><BranchApprovalsPage /></Guarded>}
               />
               <Route
                 path="/account"
