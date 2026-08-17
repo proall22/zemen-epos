@@ -23,7 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError } from "@/lib/api";
+import { ApiError, resolveImageUrl } from "@/lib/api";
 import { readApiMessage, readUserMessages } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import {
@@ -545,7 +545,7 @@ export function InventoryFormSheet({
                     <ImageUp className="size-5 text-muted-foreground" />
                   </div>
                   {form.imageUrl && (
-                    <img src={form.imageUrl} alt="Item preview" className="mt-2 h-24 w-24 rounded-md border object-cover" />
+                    <img src={resolveImageUrl(form.imageUrl)} alt="Item preview" className="mt-2 h-24 w-24 rounded-md border object-cover" />
                   )}
                   <p className="mt-1 text-xs text-muted-foreground">JPEG, PNG, WebP, or GIF; maximum 5 MB.</p>
                 </Field>

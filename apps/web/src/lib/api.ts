@@ -1,4 +1,23 @@
-export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4899";
+/** Use nginx's same-origin API gateway in production so Docker deployments
+ * work from any hostname instead of pointing a visitor at their localhost. */
+export const API_BASE =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? "http://localhost:4899" : "/api");
+
+/** Resolve uploaded image paths, including localhost URLs saved by older
+ * builds, against the API endpoint used by the current deployment. */
+export function resolveImageUrl(value: string | null | undefined): string {
+  if (!value) return "";
+  try {
+    const parsed = new URL(value, window.location.origin);
+    if (parsed.pathname.startsWith("/inventory/images/")) {
+      return `${API_BASE}${parsed.pathname}`;
+    }
+  } catch {
+    // Preserve a manually entered value if it is not a parseable URL.
+  }
+  return value;
+}
 
 export const TOKEN_STORAGE_KEY = "eirms_token";
 

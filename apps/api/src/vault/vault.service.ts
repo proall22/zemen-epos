@@ -457,6 +457,12 @@ export class VaultService {
       const errBody = err.response?.data as VaultErrorBody | undefined;
       const detail =
         (errBody?.errors && errBody.errors.join('; ')) || err.message;
+      if (path === 'auth/approle/login') {
+        this.logger.error(`Vault AppRole login failed (${status}): ${detail}`);
+        return new ServiceUnavailableException(
+          'Secure credential storage is temporarily unavailable. Please try again shortly or contact support.',
+        );
+      }
       return new ServiceUnavailableException(
         `Vault ${path} failed (${status}): ${detail}`,
       );

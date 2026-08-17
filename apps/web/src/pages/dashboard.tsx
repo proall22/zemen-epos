@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
 	ArrowDownRight,
 	ArrowRight,
 	ArrowUpRight,
 	Banknote,
+	ChartColumn,
+	Building2,
 	CircleDollarSign,
 	Crown,
 	CheckCircle2,
@@ -14,7 +16,8 @@ import {
 	ReceiptText,
 	RefreshCw,
 	ShieldCheck,
-	Sparkles,
+	ShoppingCart,
+	Store,
 	TrendingUp,
 	TriangleAlert,
 	Users,
@@ -37,6 +40,13 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
 import { isPlaceholderTin } from "@/lib/invoice-types";
 import {
@@ -72,11 +82,13 @@ export function DashboardPage() {
 }
 
 function MerchantDashboardPage() {
-	const { user, branch } = useAuth();
+	const { user, branch, merchant, availableBranches, selectBranch } = useAuth();
 	const [data, setData] = useState<DashboardSummary | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [scope, setScope] = useListScope("eirms:list-scope:dashboard");
+	const [switchingBranch, setSwitchingBranch] = useState(false);
+	const requestSequence = useRef(0);
 
 	const greeting = (() => {
 		const h = new Date().getHours();
@@ -93,21 +105,43 @@ function MerchantDashboardPage() {
 	}, [scope, branch?.id]);
 
 	async function refresh() {
+		const requestId = ++requestSequence.current;
 		setLoading(true);
 		setError(null);
 		try {
-			setData(await getDashboardSummary({ scope }));
+			const next = await getDashboardSummary({ scope });
+			if (requestId === requestSequence.current) setData(next);
+		} catch (e) {
+			if (requestId === requestSequence.current) {
+				setError((e as Error).message);
+			}
+		} finally {
+			if (requestId === requestSequence.current) setLoading(false);
+		}
+	}
+
+	async function changeDashboardScope(value: string) {
+		if (value === "ALL") {
+			setScope("merchant");
+			return;
+		}
+		setScope("branch");
+		if (value === branch?.id) return;
+		setSwitchingBranch(true);
+		setError(null);
+		try {
+			await selectBranch(value);
 		} catch (e) {
 			setError((e as Error).message);
 		} finally {
-			setLoading(false);
+			setSwitchingBranch(false);
 		}
 	}
 
 	return (
 		<div className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8">
 			{/* ── Page header ──────────────────────────────────────────────── */}
-			<header className="flex items-end justify-between gap-4">
+			<header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
 				<div className="flex flex-col gap-1">
 					<p className="text-[13px] font-medium text-muted-foreground">
 						{greeting},{" "}
@@ -120,16 +154,60 @@ function MerchantDashboardPage() {
 						Dashboard
 					</h1>
 					<p className="text-[13px] text-muted-foreground">
-						Snapshot of your invoicing, payments, and collections.
+						{merchant?.tradeName ?? merchant?.legalName ?? "Your business"} · {scope === "merchant" ? "All branches" : (branch?.tradeName ?? branch?.name ?? "Selected branch")}
 					</p>
 				</div>
-				<div className="flex items-center gap-2.5">
-					<ScopeToggle scope={scope} onChange={setScope} />
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+					{user?.role === "MERCHANT_ADMIN" && (
+						<div className="min-w-[290px] rounded-xl border border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background p-2.5 shadow-sm">
+							<div className="mb-1.5 flex items-center justify-between px-1">
+								<span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+									Dashboard scope
+								</span>
+								<span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+									{scope === "merchant" ? "Merchant-wide" : "Branch view"}
+								</span>
+							</div>
+							<Select
+								value={scope === "merchant" ? "ALL" : (branch?.id ?? "")}
+								onValueChange={(value) => void changeDashboardScope(value)}
+								disabled={switchingBranch}
+							>
+								<SelectTrigger className="h-10 border-primary/20 bg-background font-medium">
+									<SelectValue placeholder="Choose dashboard branch" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="ALL">
+										<span className="flex items-center gap-2">
+											<Building2 className="size-4 text-primary" />
+											All branches · {merchant?.tradeName ?? merchant?.legalName}
+										</span>
+									</SelectItem>
+									{availableBranches.map((item) => (
+										<SelectItem key={item.id} value={item.id}>
+											<span className="flex items-center gap-2">
+												<Store className="size-4 text-muted-foreground" />
+												{item.tradeName ?? item.name}
+												{item.id === branch?.id && (
+													<span className="text-xs text-muted-foreground">Current</span>
+												)}
+											</span>
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
+								{scope === "merchant"
+									? `Showing combined data from ${availableBranches.length} branches.`
+									: `Showing only ${branch?.tradeName ?? branch?.name ?? "the selected branch"}.`}
+							</p>
+						</div>
+					)}
 					<Button
 						variant="outline"
 						size="sm"
 						onClick={refresh}
-						disabled={loading}
+						disabled={loading || switchingBranch}
 						className="gap-2 h-9"
 					>
 						<RefreshCw className={cn("size-4", loading && "animate-spin")} />
@@ -205,7 +283,7 @@ function MerchantDashboardPage() {
 							<CardHeader className="pb-2">
 								<div className="flex items-center gap-2">
 									<span className="flex size-7 items-center justify-center rounded-[8px] bg-primary/10 text-primary">
-										<Sparkles className="size-3.5" />
+										<ChartColumn className="size-3.5" />
 									</span>
 									<div>
 										<CardTitle className="text-[15px]">
@@ -968,7 +1046,7 @@ function CashierDashboardPage() {
 						className="gap-2 h-9 bg-primary text-primary-foreground"
 					>
 						<Link to="/sale">
-							<Sparkles className="size-4" /> New Sale
+							<ShoppingCart className="size-4" /> New Sale
 						</Link>
 					</Button>
 				</div>

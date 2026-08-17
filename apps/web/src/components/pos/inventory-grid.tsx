@@ -2,6 +2,7 @@ import { Plus, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Input } from "@/components/ui/input";
+import { resolveImageUrl } from "@/lib/api";
 import { nonTaxableSuffix } from "@/lib/invoice-types";
 import type { InventoryItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -126,7 +127,7 @@ function ItemCard({
         {item.imageUrl ? (
           // eslint-disable-next-line jsx-a11y/img-redundant-alt
           <img
-            src={item.imageUrl}
+            src={resolveImageUrl(item.imageUrl)}
             alt={item.description}
             className="size-full object-cover transition-transform group-hover:scale-105"
             onError={(e) => {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PackagePlus, Plus, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { ErrorCallout } from "@/components/error-callout";
 import { Button } from "@/components/ui/button";
@@ -188,6 +189,8 @@ export function PurchaseFormSheet({
     e.preventDefault();
     setError(null);
     const problems: string[] = [];
+    if (!items.length)
+      problems.push("No inventory items exist yet. Create an item under Inventory before recording a purchase.");
     if (!branchId) problems.push("Pick a branch.");
     if (!purchaseDate) problems.push("Set the purchase date.");
     if (!lines.length) problems.push("Add at least one line.");
@@ -343,9 +346,16 @@ export function PurchaseFormSheet({
                         onValueChange={(v) =>
                           updateLine(idx, "inventoryItemId", v)
                         }
+                        disabled={items.length === 0}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Pick an item" />
+                          <SelectValue
+                            placeholder={
+                              items.length === 0
+                                ? "No inventory items available"
+                                : "Pick an item"
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {items.map((i) => (
@@ -441,6 +451,22 @@ export function PurchaseFormSheet({
               />
             )}
 
+            {items.length === 0 && (
+              <ErrorCallout
+                title="Create an inventory item first."
+                items={[
+                  "A vendor identifies who supplied the goods; it does not create the products. Open Inventory, add the product, then return here and select it on the purchase line.",
+                ]}
+              />
+            )}
+            {items.length === 0 && (
+              <Button asChild type="button" variant="outline">
+                <Link to="/inventory" onClick={onClose}>
+                  Go to Inventory
+                </Link>
+              </Button>
+            )}
+
             {error && <ErrorCallout title={error.title} items={error.items} />}
           </SheetBody>
 
@@ -448,7 +474,11 @@ export function PurchaseFormSheet({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" form="purchase-form" disabled={busy}>
+            <Button
+              type="submit"
+              form="purchase-form"
+              disabled={busy || items.length === 0}
+            >
               {busy ? "Saving…" : "Record purchase"}
             </Button>
           </SheetFooter>

@@ -13,7 +13,6 @@ import {
   Loader2,
   MapPin,
   ShieldCheck,
-  Sparkles,
   Store,
 } from "lucide-react";
 
@@ -66,20 +65,7 @@ export function BranchOnboardingPage() {
 
 function BrandSide({ merchantName }: { merchantName: string | null }) {
   return (
-    <aside className="relative hidden overflow-hidden bg-[#5700FF] text-white lg:flex lg:flex-col">
-      <div
-        aria-hidden
-        className="absolute -right-32 -top-32 size-96 rounded-full bg-white/10 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute -bottom-40 -left-32 size-[28rem] rounded-full bg-fuchsia-400/30 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.06] [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]"
-      />
-
+    <aside className="relative hidden overflow-hidden bg-[#111827] text-white lg:flex lg:flex-col">
       <div className="relative z-10 flex flex-1 flex-col justify-between p-12">
         <header className="flex items-center gap-3">
           <ZemenEPosLogo mono className="h-6 w-auto text-white" />
@@ -89,7 +75,7 @@ function BrandSide({ merchantName }: { merchantName: string | null }) {
 
         <div className="flex max-w-md flex-col gap-6">
           <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em]">
-            <Sparkles className="size-3" />
+            <MapPin className="size-3" />
             New location
           </span>
           <h1 className="text-4xl font-semibold leading-tight tracking-tight">
@@ -193,9 +179,38 @@ function validateStep(step: Step, form: FormState): string | null {
   switch (step) {
     case "basics":
       if (!form.name.trim()) return "Please give this location a name.";
+      if (form.name.trim().length < 3)
+        return "Location name must be at least 3 characters.";
+      if (form.name.trim().length > 120)
+        return "Location name cannot exceed 120 characters.";
+      if (form.systemNumber.trim().length > 40)
+        return "Shop / register number cannot exceed 40 characters.";
+      if (
+        form.systemNumber.trim() &&
+        !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(form.systemNumber.trim())
+      )
+        return "Shop / register number can use letters, numbers, dot, slash, dash, and underscore only.";
       return null;
+    case "tax": {
+      const country = form.country.trim();
+      if (country && !/^[A-Z]{2,3}$/.test(country))
+        return "Country must be an uppercase code such as ET.";
+      return null;
+    }
+    case "connect": {
+      const credentials = [form.clientId, form.clientSecret, form.apikey].map((v) => v.trim());
+      const supplied = credentials.filter(Boolean).length;
+      if (supplied > 0 && supplied < 3)
+        return "Enter Client ID, Client secret, and API key together, or leave all three blank.";
+      if (credentials[0] && credentials[0].length < 3)
+        return "Client ID must be at least 3 characters.";
+      if (credentials[1] && credentials[1].length < 8)
+        return "Client secret must be at least 8 characters.";
+      if (credentials[2] && credentials[2].length < 8)
+        return "API key must be at least 8 characters.";
+      return null;
+    }
     default:
-      // Everything past the name is optional.
       return null;
   }
 }
@@ -249,11 +264,13 @@ function FormSide({
   }
 
   async function handleSubmit() {
-    const nameErr = validateStep("basics", form);
-    if (nameErr) {
-      setStepIdx(STEPS.indexOf("basics"));
-      setError({ title: nameErr, items: [] });
-      return;
+    for (const candidate of STEPS) {
+      const validationError = validateStep(candidate, form);
+      if (validationError) {
+        setStepIdx(STEPS.indexOf(candidate));
+        setError({ title: validationError, items: [] });
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -296,7 +313,7 @@ function FormSide({
   }
 
   return (
-    <main className="flex items-start justify-center bg-background px-6 py-10">
+    <main className="flex items-start justify-center bg-[#f7f5ff] px-6 py-10 dark:bg-[#111827]">
       <div className="flex w-full max-w-2xl flex-col gap-6">
         <div className="flex flex-col items-center gap-3 lg:hidden">
           <ZemenEPosLogo className="h-6 w-auto text-foreground" />
@@ -335,6 +352,8 @@ function FormSide({
                   placeholder="e.g. Bole Shop"
                   autoFocus
                   required
+                  minLength={3}
+                  maxLength={120}
                 />
               </Field>
               <Field label="Shop / register number" span={2}>
@@ -342,6 +361,7 @@ function FormSide({
                   value={form.systemNumber}
                   onChange={(e) => update("systemNumber", e.target.value)}
                   placeholder="Leave blank if you don't have one yet"
+                  maxLength={40}
                 />
                 <p className="text-xs text-muted-foreground">
                   The number for this till or register. You can add it later if
@@ -432,8 +452,10 @@ function FormSide({
               <Field label="Country">
                 <Input
                   value={form.country}
-                  onChange={(e) => update("country", e.target.value)}
+                  onChange={(e) => update("country", e.target.value.toUpperCase())}
                   placeholder="ET"
+                  minLength={2}
+                  maxLength={3}
                 />
               </Field>
             </div>
@@ -485,6 +507,8 @@ function FormSide({
                     value={form.clientId}
                     onChange={(e) => update("clientId", e.target.value)}
                     autoComplete="off"
+                    minLength={3}
+                    maxLength={500}
                   />
                 </Field>
                 <Field label="Client secret">
@@ -493,6 +517,8 @@ function FormSide({
                     value={form.clientSecret}
                     onChange={(e) => update("clientSecret", e.target.value)}
                     autoComplete="new-password"
+                    minLength={8}
+                    maxLength={2000}
                   />
                 </Field>
                 <Field label="API key">
@@ -501,6 +527,8 @@ function FormSide({
                     value={form.apikey}
                     onChange={(e) => update("apikey", e.target.value)}
                     autoComplete="new-password"
+                    minLength={8}
+                    maxLength={2000}
                   />
                 </Field>
               </div>

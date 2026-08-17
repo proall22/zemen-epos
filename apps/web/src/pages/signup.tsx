@@ -169,16 +169,31 @@ function validateStep(step: Step, form: FormState): string | null {
   switch (step) {
     case "business":
       if (!form.legalName.trim()) return "Legal name is required.";
+      if (form.legalName.trim().length < 3)
+        return "Legal name must be at least 3 characters.";
+      if (form.legalName.trim().length > 200)
+        return "Legal name cannot exceed 200 characters.";
       if (!form.tin.trim()) return "TIN is required.";
+      if (!/^\d{10}$/.test(form.tin.trim()))
+        return "TIN must contain exactly 10 digits.";
+      if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+        return "Enter a valid business email address.";
+      if (form.phone.trim() && !/^\+?[0-9][0-9 ()-]{6,28}$/.test(form.phone.trim()))
+        return "Enter a valid phone number.";
       return null;
     case "address":
       // Entirely optional.
       return null;
     case "branch":
-      // Name optional too — defaults to "Main" at submit time.
+      if (form.branchName.trim() && form.branchName.trim().length < 3)
+        return "Branch name must be at least 3 characters.";
       return null;
     case "owner":
       if (!form.ownerEmail.trim()) return "Owner email is required.";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.ownerEmail.trim()))
+        return "Enter a valid owner email address.";
+      if (form.ownerName.trim() && form.ownerName.trim().length < 2)
+        return "Owner name must be at least 2 characters.";
       if (!form.ownerPassword) return "Password is required.";
       if (form.ownerPassword.length < 8)
         return "Password must be at least 8 characters.";
@@ -337,6 +352,8 @@ function FormSide({
                 <Input
                   value={form.legalName}
                   onChange={(e) => update("legalName", e.target.value)}
+                  minLength={3}
+                  maxLength={200}
                   autoFocus
                   required
                 />
@@ -350,7 +367,11 @@ function FormSide({
               <Field label="TIN *">
                 <Input
                   value={form.tin}
-                  onChange={(e) => update("tin", e.target.value)}
+                  onChange={(e) => update("tin", e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  inputMode="numeric"
+                  pattern="[0-9]{10}"
+                  minLength={10}
+                  maxLength={10}
                   required
                 />
               </Field>
@@ -431,6 +452,8 @@ function FormSide({
                 <Input
                   value={form.branchName}
                   onChange={(e) => update("branchName", e.target.value)}
+                  minLength={3}
+                  maxLength={120}
                   placeholder="Main"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -467,6 +490,7 @@ function FormSide({
                   autoComplete="email"
                   value={form.ownerEmail}
                   onChange={(e) => update("ownerEmail", e.target.value)}
+                  maxLength={254}
                   required
                 />
               </Field>

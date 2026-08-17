@@ -57,7 +57,9 @@ COPY --from=build /deploy/api/package.json ./
 COPY --from=build /repo/apps/api/prisma ./prisma
 COPY apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
 
-RUN chmod 755 ./docker-entrypoint.sh
+RUN mkdir -p /var/lib/zemen/uploads/inventory \
+ && chown -R node:node /var/lib/zemen/uploads \
+ && chmod 755 ./docker-entrypoint.sh
 
 USER node
 EXPOSE 4899

@@ -152,7 +152,6 @@ model Branch {
   scheduledReports ScheduledReport[]
   invoiceCancellations InvoiceCancellation[]
 
-  @@unique([merchantId, systemNumber])
   @@map("branches")
 }
 

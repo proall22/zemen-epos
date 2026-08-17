@@ -3,12 +3,15 @@ import { BranchStockPolicy } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  MinLength,
+  Matches,
 } from 'class-validator';
 
 /** Partial-update DTO. Rotating EIRMS credentials goes through this endpoint —
@@ -19,6 +22,8 @@ export class UpdateBranchDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsNotEmpty({ message: 'Location name cannot be empty.' })
+  @MinLength(3, { message: 'Location name must be at least 3 characters.' })
   @MaxLength(120)
   name?: string;
 
@@ -26,6 +31,9 @@ export class UpdateBranchDto {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Matches(/^$|^[A-Za-z0-9][A-Za-z0-9._/-]*$/, {
+    message: 'System number may contain letters, numbers, dot, slash, dash, or underscore.',
+  })
   systemNumber?: string;
 
   @ApiPropertyOptional()
@@ -87,22 +95,30 @@ export class UpdateBranchDto {
   })
   @IsOptional()
   @IsString()
+  @MinLength(2)
   @MaxLength(3)
+  @Matches(/^[A-Z]{2,3}$/, { message: 'Country must be a 2 or 3 letter uppercase code, for example ET.' })
   country?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MinLength(3)
+  @MaxLength(500)
   eirmsClientId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
   eirmsClientSecret?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
   eirmsApikey?: string;
 
   @ApiPropertyOptional()

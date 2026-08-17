@@ -32,6 +32,7 @@ import { readApiMessage } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import { loadOverrides } from "@/i18n";
 import {
+  createLanguage,
   deleteLanguage,
   deleteTranslationOverride,
   listLanguagesAdmin,
@@ -63,6 +64,13 @@ export function AdminTranslationsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newLanguage, setNewLanguage] = useState({
+    code: "",
+    name: "",
+    nativeName: "",
+    ordering: "",
+  });
 
   useEffect(() => {
     if (!allowed) return;
@@ -152,6 +160,34 @@ export function AdminTranslationsPage() {
     }
   }
 
+  async function handleCreateLanguage(event: React.FormEvent) {
+    event.preventDefault();
+    const code = newLanguage.code.trim();
+    const name = newLanguage.name.trim();
+    const nativeName = newLanguage.nativeName.trim();
+    if (!code || !name || !nativeName) {
+      setError("Language code, name, and native name are required.");
+      return;
+    }
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await createLanguage({
+        code,
+        name,
+        nativeName,
+        ordering: newLanguage.ordering === "" ? undefined : Number(newLanguage.ordering),
+      });
+      setNewLanguage({ code: "", name: "", nativeName: "", ordering: "" });
+      await refreshLanguages();
+      setSelectedLang(created.code);
+    } catch (err) {
+      setError(readError(err));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleRemove(lang: Language) {
     if (!confirm(`Deactivate language "${lang.name}"?`)) return;
     try {
@@ -205,6 +241,28 @@ export function AdminTranslationsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          <form
+            onSubmit={handleCreateLanguage}
+            className="mb-5 grid gap-3 rounded-md border bg-muted/20 p-4 sm:grid-cols-5 sm:items-end"
+          >
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="language-code">Code</Label>
+              <Input id="language-code" placeholder="or" maxLength={5} value={newLanguage.code} onChange={(e) => setNewLanguage((v) => ({ ...v, code: e.target.value }))} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="language-name">Name</Label>
+              <Input id="language-name" placeholder="Oromo" maxLength={60} value={newLanguage.name} onChange={(e) => setNewLanguage((v) => ({ ...v, name: e.target.value }))} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="language-native-name">Native name</Label>
+              <Input id="language-native-name" placeholder="Afaan Oromoo" maxLength={60} value={newLanguage.nativeName} onChange={(e) => setNewLanguage((v) => ({ ...v, nativeName: e.target.value }))} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="language-ordering">Ordering</Label>
+              <Input id="language-ordering" type="number" placeholder="10" value={newLanguage.ordering} onChange={(e) => setNewLanguage((v) => ({ ...v, ordering: e.target.value }))} />
+            </div>
+            <Button type="submit" disabled={creating}>{creating ? "Adding…" : "Add language"}</Button>
+          </form>
           <Table>
             <TableHeader>
               <TableRow>

@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
+import { resolveImageUrl } from "@/lib/api";
 import { listStockMovements, listStores } from "@/lib/resources";
 import type {
   StockMovementReason,
@@ -357,7 +358,7 @@ function ItemCell({
     <div className="flex min-w-48 items-center gap-3">
       <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted text-sm font-semibold text-muted-foreground">
         {imageUrl ? (
-          <img src={imageUrl} alt="" loading="lazy" className="size-full object-cover" />
+          <img src={resolveImageUrl(imageUrl)} alt="" loading="lazy" className="size-full object-cover" />
         ) : (
           description.trim().charAt(0).toUpperCase() || "?"
         )}

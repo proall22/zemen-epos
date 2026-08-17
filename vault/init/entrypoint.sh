@@ -142,7 +142,23 @@ vault write auth/approle/role/"$ROLE_NAME" \
   secret_id_num_uses=0 >/dev/null
 
 # ----- 6. role-id / secret-id materialisation -------------------------------
-if [ ! -s "$APPROLE_DIR/role-id" ] || [ ! -s "$APPROLE_DIR/secret-id" ]; then
+# Credentials can outlive /vault/data because approle is a separate bind mount.
+# Validate the pair against the current Vault before preserving it; otherwise a
+# reinitialised Vault leaves the API permanently sending stale IDs and every
+# branch secret read fails with "invalid role or secret ID".
+APPROLE_VALID=false
+if [ -s "$APPROLE_DIR/role-id" ] && [ -s "$APPROLE_DIR/secret-id" ]; then
+  OLD_ROLE_ID="$(cat "$APPROLE_DIR/role-id")"
+  OLD_SECRET_ID="$(cat "$APPROLE_DIR/secret-id")"
+  if vault write -format=json auth/approle/login \
+      role_id="$OLD_ROLE_ID" secret_id="$OLD_SECRET_ID" >/dev/null 2>&1; then
+    APPROLE_VALID=true
+  else
+    echo "vault-init: stored AppRole credentials are stale; rotating them."
+  fi
+fi
+
+if [ "$APPROLE_VALID" != "true" ]; then
   echo "vault-init: minting role-id + secret-id under $APPROLE_DIR."
   ROLE_ID="$(vault read -field=role_id auth/approle/role/"$ROLE_NAME"/role-id)"
   SECRET_ID="$(vault write -field=secret_id -f auth/approle/role/"$ROLE_NAME"/secret-id)"
@@ -153,7 +169,7 @@ if [ ! -s "$APPROLE_DIR/role-id" ] || [ ! -s "$APPROLE_DIR/secret-id" ]; then
   # bind-mount the developer already controls.
   chmod 644 "$APPROLE_DIR/role-id" "$APPROLE_DIR/secret-id"
 else
-  echo "vault-init: existing AppRole credentials in $APPROLE_DIR — leaving alone."
+  echo "vault-init: existing AppRole credentials are valid — leaving them alone."
 fi
 
 echo "vault-init: done."

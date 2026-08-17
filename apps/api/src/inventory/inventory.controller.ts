@@ -17,8 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import type { InventoryCategory, InventoryItem, StockMovement } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 
 import type { JwtPayload } from '../auth/auth.types';
@@ -115,12 +114,25 @@ export class InventoryController {
   @Get('images/:filename')
   @Public()
   @Header('Cache-Control', 'public, max-age=31536000, immutable')
-  image(@Param('filename') filename: string): StreamableFile {
+  async image(@Param('filename') filename: string): Promise<StreamableFile> {
     if (!/^[0-9a-f-]+\.(?:jpg|png|webp|gif)$/i.test(filename) || extname(filename) === '') {
       throw new NotFoundException('Image not found.');
     }
     const directory = process.env.IMAGE_UPLOAD_DIR || join(process.cwd(), 'uploads', 'inventory');
-    return new StreamableFile(createReadStream(join(directory, filename)));
+    try {
+      const bytes = await readFile(join(directory, filename));
+      const contentTypes: Record<string, string> = {
+        '.jpg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+      };
+      return new StreamableFile(bytes, {
+        type: contentTypes[extname(filename).toLowerCase()] ?? 'application/octet-stream',
+      });
+    } catch {
+      throw new NotFoundException('Image not found.');
+    }
   }
 
   @Get('scan/:code')

@@ -2,12 +2,15 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BranchStockPolicy } from '@prisma/client';
 import {
   IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  MinLength,
+  Matches,
 } from 'class-validator';
 
 /** Onboarding payload for a new branch under a merchant. EIRMS credentials
@@ -16,6 +19,8 @@ import {
 export class CreateBranchDto {
   @ApiProperty({ example: 'Bole Branch' })
   @IsString()
+  @IsNotEmpty({ message: 'Location name is required.' })
+  @MinLength(3, { message: 'Location name must be at least 3 characters.' })
   @MaxLength(120)
   name!: string;
 
@@ -26,6 +31,9 @@ export class CreateBranchDto {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Matches(/^$|^[A-Za-z0-9][A-Za-z0-9._/-]*$/, {
+    message: 'System number may contain letters, numbers, dot, slash, dash, or underscore.',
+  })
   systemNumber?: string;
 
   @ApiPropertyOptional()
@@ -87,7 +95,9 @@ export class CreateBranchDto {
   })
   @IsOptional()
   @IsString()
+  @MinLength(2)
   @MaxLength(3)
+  @Matches(/^[A-Z]{2,3}$/, { message: 'Country must be a 2 or 3 letter uppercase code, for example ET.' })
   country?: string;
 
   @ApiPropertyOptional({
@@ -102,16 +112,22 @@ export class CreateBranchDto {
   @ApiPropertyOptional({ description: 'EIRMS clientId for this branch.' })
   @IsOptional()
   @IsString()
+  @MinLength(3)
+  @MaxLength(500)
   eirmsClientId?: string;
 
   @ApiPropertyOptional({ description: 'EIRMS clientSecret for this branch.' })
   @IsOptional()
   @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
   eirmsClientSecret?: string;
 
   @ApiPropertyOptional({ description: 'EIRMS apikey for this branch.' })
   @IsOptional()
   @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
   eirmsApikey?: string;
 
   /** Optional geo-pin (WGS84). Bounded to valid earth coords so we don't

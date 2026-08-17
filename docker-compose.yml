@@ -99,6 +99,7 @@ services:
       METRICS_USER: ${METRICS_USER:-metrics}
       METRICS_PASS: ${METRICS_PASS:-metrics}
       EXPORTS_STORAGE_DIR: /var/lib/zemen/exports
+      IMAGE_UPLOAD_DIR: /var/lib/zemen/uploads/inventory
       EXPORTS_RETENTION_DAYS: ${EXPORTS_RETENTION_DAYS:-7}
       PRISMA_MIGRATE_RETRIES: ${PRISMA_MIGRATE_RETRIES:-6}
       EIRMS_SIGNING_PRIVATE_KEY_FILE: ${EIRMS_CERT_DIR:+/etc/zemen/private_key.key}
@@ -108,6 +109,7 @@ services:
     volumes:
       - ./vault/approle:/vault/approle:ro
       - ./exports:/var/lib/zemen/exports
+      - ./uploads:/var/lib/zemen/uploads
       - ${EIRMS_CERT_DIR:-./apps/api/secrets/zemen}:/etc/zemen:ro
     depends_on:
       # postgres: # Remove postgres dependency

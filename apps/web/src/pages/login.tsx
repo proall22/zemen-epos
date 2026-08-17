@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Loader2,
   ShieldCheck,
-  // Sparkles,
   Workflow,
 } from "lucide-react";
 

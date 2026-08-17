@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Globe2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -207,7 +207,7 @@ export function EmailDeliverabilityPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-[8px] bg-primary/10 text-primary">
-                <Sparkles className="size-3.5" />
+                <Globe2 className="size-3.5" />
               </span>
               <div>
                 <CardTitle className="text-[15px]">By domain</CardTitle>

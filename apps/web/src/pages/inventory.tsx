@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ImageOff, Plus, Search, X, Sparkles, Package } from "lucide-react";
+import { ImageOff, Plus, Search, X, Package } from "lucide-react";
 
 import { InventoryFormSheet } from "@/components/inventory-form-sheet";
 import { PrintLabelsDialog } from "@/components/print-labels-dialog";
@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { resolveImageUrl } from "@/lib/api";
 import {
   Popover,
   PopoverContent,
@@ -159,7 +160,7 @@ export function InventoryPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-[8px] bg-primary/10 text-primary">
-                <Sparkles className="size-3.5" />
+                <Package className="size-3.5" />
               </span>
               <div>
                 <CardTitle className="text-[15px]">{`${t("nav.inventory")} (${total})`}</CardTitle>
@@ -641,7 +642,7 @@ function Thumbnail({ src, alt }: { src: string | null; alt: string }) {
   }
   return (
     <img
-      src={src}
+      src={resolveImageUrl(src)}
       alt={alt}
       className="size-10 rounded-md border object-cover"
       onError={(e) => {

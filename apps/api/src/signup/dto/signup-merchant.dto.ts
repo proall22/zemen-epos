@@ -4,12 +4,14 @@ import {
   IsDefined,
   IsEmail,
   IsNumber,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
   MinLength,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 
@@ -19,6 +21,8 @@ import {
 export class SignupMerchantInfoDto {
   @ApiProperty({ example: 'Acme PLC' })
   @IsString()
+  @IsNotEmpty({ message: 'Legal name is required.' })
+  @MinLength(3, { message: 'Legal name must be at least 3 characters.' })
   @MaxLength(200)
   legalName!: string;
 
@@ -30,7 +34,7 @@ export class SignupMerchantInfoDto {
 
   @ApiProperty({ example: '0000123456' })
   @IsString()
-  @MaxLength(50)
+  @Matches(/^\d{10}$/, { message: 'TIN must contain exactly 10 digits.' })
   tin!: string;
 
   @ApiPropertyOptional()
@@ -41,41 +45,50 @@ export class SignupMerchantInfoDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(30)
+  @Matches(/^\+?[0-9][0-9 ()-]{6,28}$/, { message: 'Phone number format is invalid.' })
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(40)
   vatNumber?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   city?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   region?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   zone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   wereda?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   kebele?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   houseNumber?: string;
 }
 
@@ -88,6 +101,7 @@ export class SignupBranchInfoDto {
   })
   @IsOptional()
   @IsString()
+  @MinLength(3, { message: 'Branch name must be at least 3 characters.' })
   @MaxLength(120)
   name?: string;
 
@@ -126,6 +140,7 @@ export class SignupOwnerDto {
   @ApiPropertyOptional({ example: 'Hana Tadesse' })
   @IsOptional()
   @IsString()
+  @MinLength(2, { message: 'Owner name must be at least 2 characters.' })
   @MaxLength(200)
   name?: string;
 }

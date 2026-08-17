@@ -439,7 +439,9 @@ export async function uploadInventoryImage(file: File): Promise<string> {
     method: "POST",
     body: form,
   });
-  return `${API_BASE}${uploaded.path}`;
+  // Store the stable API path in the database, not a deployment-specific
+  // hostname. Image components resolve it through the current API base.
+  return uploaded.path;
 }
 
 /** Exact-match barcode scan lookup (UPC > SKU > item code). Returns null on
