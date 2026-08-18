@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { User } from '@prisma/client';
 
@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { JwtPayload } from '../auth/auth.types';
 import { RequirePermissions } from '../auth/require-permissions.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
+import { QueryUsersDto } from './dto/query-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
@@ -52,10 +53,15 @@ export class UsersController {
 
   @Get()
   @RequirePermissions('user.view')
-  @ApiOperation({ summary: 'List users (super-admin only)' })
-  async list(): Promise<SafeUser[]> {
-    const all = await this.users.list();
-    return all.map(toSafe);
+  @ApiOperation({ summary: 'Paginated, filtered users in the permitted scope' })
+  async list(@Query() query: QueryUsersDto): Promise<{
+    items: SafeUser[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const page = await this.users.list(query);
+    return { ...page, items: page.items.map(toSafe) };
   }
 
   @Post()

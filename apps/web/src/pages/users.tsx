@@ -19,6 +19,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -28,8 +37,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { listBranches, listUsers, unlockUser, updateUser } from "@/lib/resources";
-import { ROLE_LABELS, type ManagedUser, type SafeBranch } from "@/lib/types";
+import { listBranches, listMerchants, listUsers, unlockUser, updateUser } from "@/lib/resources";
+import { ROLE_LABELS, type ManagedUser, type Merchant, type SafeBranch, type UserRole } from "@/lib/types";
+
+const PAGE_SIZE = 25;
 
 /** Pure helper: is the user currently locked out? */
 function isLocked(u: ManagedUser): boolean {
@@ -39,6 +50,16 @@ function isLocked(u: ManagedUser): boolean {
 export function UsersPage() {
   const { can, user: actor, merchant } = useAuth();
   const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [role, setRole] = useState<UserRole | "ALL">("ALL");
+  const [status, setStatus] = useState<"ALL" | "ACTIVE" | "DISABLED">("ALL");
+  const [merchantId, setMerchantId] = useState("ALL");
+  const [branchId, setBranchId] = useState("ALL");
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [filterBranches, setFilterBranches] = useState<SafeBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
@@ -47,25 +68,38 @@ export function UsersPage() {
     new Map(),
   );
 
+  useEffect(() => { void refresh(); }, [offset, appliedSearch, role, status, merchantId, branchId]);
+
   useEffect(() => {
-    void refresh();
-  }, []);
+    if (actor?.role === "SUPER_ADMIN") void listMerchants().then(setMerchants).catch(() => undefined);
+  }, [actor?.role]);
 
   // Resolve cashier branch ids to a name. SUPER_ADMIN (no merchantId) skips
   // this — they manage branches from the merchants admin page.
   useEffect(() => {
-    const merchantId = actor?.merchantId ?? merchant?.id ?? null;
-    if (!merchantId) return;
-    void listBranches(merchantId)
-      .then((rows) => setBranchesById(new Map(rows.map((b) => [b.id, b]))))
+    const selected = actor?.role === "SUPER_ADMIN"
+      ? (merchantId === "ALL" ? null : merchantId)
+      : actor?.merchantId ?? merchant?.id ?? null;
+    if (!selected) { setFilterBranches([]); setBranchesById(new Map()); return; }
+    void listBranches(selected)
+      .then((rows) => { setFilterBranches(rows); setBranchesById(new Map(rows.map((b) => [b.id, b]))); })
       .catch(() => undefined);
-  }, [actor?.merchantId, merchant?.id]);
+  }, [actor?.role, actor?.merchantId, merchant?.id, merchantId]);
 
   async function refresh() {
     setLoading(true);
     setError(null);
     try {
-      setUsers(await listUsers());
+      const result = await listUsers({
+        limit: PAGE_SIZE, offset,
+        q: appliedSearch.trim() || undefined,
+        role: role === "ALL" ? undefined : role,
+        active: status === "ALL" ? undefined : status === "ACTIVE",
+        merchantId: merchantId === "ALL" ? undefined : merchantId,
+        branchId: branchId === "ALL" ? undefined : branchId,
+      });
+      setUsers(result.items);
+      setTotal(result.total);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -73,10 +107,13 @@ export function UsersPage() {
     }
   }
 
+  const page = Math.floor(offset / PAGE_SIZE) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   async function toggleActive(user: ManagedUser) {
     try {
-      const updated = await updateUser(user.id, { active: !user.active });
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      await updateUser(user.id, { active: !user.active });
+      await refresh();
     } catch {
       // surface via list refresh
       void refresh();
@@ -85,8 +122,8 @@ export function UsersPage() {
 
   async function unlock(user: ManagedUser) {
     try {
-      const updated = await unlockUser(user.id);
-      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      await unlockUser(user.id);
+      await refresh();
     } catch {
       void refresh();
     }
@@ -136,7 +173,7 @@ export function UsersPage() {
       </header>
 
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="gap-4 pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="flex size-7 items-center justify-center rounded-[8px] bg-primary/10 text-primary">
@@ -144,10 +181,52 @@ export function UsersPage() {
               </span>
               <div>
                 <CardTitle className="text-[15px]">
-                  {users.length} user{users.length === 1 ? "" : "s"}
+                  {total} user{total === 1 ? "" : "s"}
                 </CardTitle>
               </div>
             </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            {actor?.role === "SUPER_ADMIN" && (
+              <Filter label="Merchant">
+                <Select value={merchantId} onValueChange={(v) => { setMerchantId(v); setBranchId("ALL"); setOffset(0); }}>
+                  <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All merchants</SelectItem>
+                    {merchants.map((m) => <SelectItem key={m.id} value={m.id}>{m.legalName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Filter>
+            )}
+            {filterBranches.length > 0 && (
+              <Filter label="Branch">
+                <Select value={branchId} onValueChange={(v) => { setBranchId(v); setOffset(0); }}>
+                  <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All branches</SelectItem>
+                    {filterBranches.map((b) => <SelectItem key={b.id} value={b.id}>{b.tradeName ?? b.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Filter>
+            )}
+            <Filter label="Role">
+              <Select value={role} onValueChange={(v) => { setRole(v as UserRole | "ALL"); setOffset(0); }}>
+                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All roles</SelectItem>
+                  {Object.entries(ROLE_LABELS).filter(([key]) => key !== "ADMIN").map(([key, label]) => <SelectItem key={key} value={key}>{label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Filter>
+            <Filter label="Status">
+              <Select value={status} onValueChange={(v) => { setStatus(v as typeof status); setOffset(0); }}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="ALL">All</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DISABLED">Disabled</SelectItem></SelectContent>
+              </Select>
+            </Filter>
+            <form onSubmit={(e) => { e.preventDefault(); setOffset(0); setAppliedSearch(search); }}>
+              <Filter label="Search"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Email or name…" className="w-56" /></Filter>
+            </form>
           </div>
         </CardHeader>
         <CardContent>
@@ -156,7 +235,10 @@ export function UsersPage() {
           )}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No matching users.</p>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -258,6 +340,14 @@ export function UsersPage() {
                 })}
               </TableBody>
             </Table>
+            <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+              <span>Page {page} of {pageCount}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button>
+                <Button variant="outline" size="sm" disabled={offset + PAGE_SIZE >= total} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button>
+              </div>
+            </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -269,18 +359,21 @@ export function UsersPage() {
           setFormMode(null);
           setEditing(null);
         }}
-        onSaved={(u) => {
-          setUsers((prev) => {
-            const existing = prev.findIndex((x) => x.id === u.id);
-            if (existing === -1) return [u, ...prev];
-            const next = [...prev];
-            next[existing] = u;
-            return next;
-          });
+        onSaved={() => {
+          void refresh();
           setFormMode(null);
           setEditing(null);
         }}
       />
+    </div>
+  );
+}
+
+function Filter({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</Label>
+      {children}
     </div>
   );
 }

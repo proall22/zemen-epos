@@ -6,7 +6,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 import { RequestContextService } from '../audit/request-context.service';
@@ -14,6 +14,7 @@ import type { JwtPayload } from '../auth/auth.types';
 import { merchantScope } from '../common/tenant-scope';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateUserDto } from './dto/create-user.dto';
+import type { QueryUsersDto } from './dto/query-users.dto';
 import type { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
@@ -29,12 +30,49 @@ export class UsersService implements OnModuleInit {
     await this.seedSuperAdmin();
   }
 
-  list() {
-    return this.prisma.user.findMany({
-      where: { ...merchantScope(this.context.get()) },
-      orderBy: [{ active: 'desc' }, { createdAt: 'asc' }],
-      include: { branchAccess: { select: { branchId: true } } },
-    });
+  async list(query: QueryUsersDto) {
+    const limit = Math.min(Math.max(query.limit ?? 25, 1), 100);
+    const offset = Math.max(query.offset ?? 0, 0);
+    const ctx = this.context.get();
+    const scope = merchantScope(ctx);
+    const where: Prisma.UserWhereInput = { ...scope };
+
+    // A merchant-scoped actor can never widen the query to another tenant.
+    // Super Admin has no merchant scope and may select one explicitly.
+    if (!ctx?.merchantId && query.merchantId) {
+      where.merchantId = query.merchantId;
+    }
+    if (query.branchId) {
+      where.OR = [
+        { branchId: query.branchId },
+        { branchAccess: { some: { branchId: query.branchId } } },
+      ];
+    }
+    if (query.role) where.role = query.role;
+    if (typeof query.active === 'boolean') where.active = query.active;
+    const q = query.q?.trim();
+    if (q) {
+      where.AND = [
+        {
+          OR: [
+            { email: { contains: q, mode: 'insensitive' } },
+            { name: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        orderBy: [{ active: 'desc' }, { createdAt: 'asc' }],
+        include: { branchAccess: { select: { branchId: true } } },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return { items, total, limit, offset };
   }
 
   findByEmail(email: string): Promise<User | null> {

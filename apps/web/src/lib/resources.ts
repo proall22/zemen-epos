@@ -286,6 +286,7 @@ export interface AuditQuery {
   limit?: number;
   offset?: number;
   branchId?: string;
+  merchantId?: string;
 }
 
 export interface EmailEventRow {
@@ -344,8 +345,30 @@ export function getAuditLog(id: string): Promise<AuditLog> {
   return api<AuditLog>(`/audit/${id}`);
 }
 
-export function listUsers(): Promise<ManagedUser[]> {
-  return api<ManagedUser[]>("/users");
+export interface UsersQuery {
+  q?: string;
+  role?: string;
+  active?: boolean;
+  merchantId?: string;
+  branchId?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface UsersPageResult {
+  items: ManagedUser[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function listUsers(query: UsersQuery = {}): Promise<UsersPageResult> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return api<UsersPageResult>(`/users${qs ? `?${qs}` : ""}`);
 }
 
 export interface CreateUserInput {

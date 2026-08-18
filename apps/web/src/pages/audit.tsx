@@ -27,19 +27,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { listAuditLogs, type AuditQuery } from "@/lib/resources";
-import type { AuditDirection, AuditLog } from "@/lib/types";
+import { listAuditLogs, listBranches, listMerchants, type AuditQuery } from "@/lib/resources";
+import type { AuditDirection, AuditLog, Merchant, SafeBranch } from "@/lib/types";
 
 const PAGE_SIZE = 50;
 type DirectionFilter = "ALL" | AuditDirection;
 
 export function AuditPage() {
-  const { can, availableBranches } = useAuth();
+  const { can, user, availableBranches } = useAuth();
   const [items, setItems] = useState<AuditLog[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [direction, setDirection] = useState<DirectionFilter>("ALL");
   const [branchId, setBranchId] = useState<string>("ALL");
+  const [merchantId, setMerchantId] = useState<string>("ALL");
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [platformBranches, setPlatformBranches] = useState<SafeBranch[]>([]);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -47,6 +50,21 @@ export function AuditPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const allowed = can("audit.view");
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const filterBranches = isSuperAdmin ? platformBranches : availableBranches;
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    void listMerchants().then(setMerchants).catch(() => undefined);
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (!isSuperAdmin || merchantId === "ALL") {
+      setPlatformBranches([]);
+      return;
+    }
+    void listBranches(merchantId).then(setPlatformBranches).catch(() => setPlatformBranches([]));
+  }, [isSuperAdmin, merchantId]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -56,6 +74,7 @@ export function AuditPage() {
     const query: AuditQuery = { limit: PAGE_SIZE, offset };
     if (direction !== "ALL") query.direction = direction;
     if (branchId !== "ALL") query.branchId = branchId;
+    if (merchantId !== "ALL") query.merchantId = merchantId;
     if (appliedSearch.trim()) query.q = appliedSearch.trim();
     listAuditLogs(query)
       .then((page) => {
@@ -68,7 +87,7 @@ export function AuditPage() {
     return () => {
       cancelled = true;
     };
-  }, [allowed, direction, branchId, offset, appliedSearch]);
+  }, [allowed, direction, branchId, merchantId, offset, appliedSearch]);
 
   if (!allowed) {
     return (
@@ -100,6 +119,18 @@ export function AuditPage() {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <CardTitle>{total} event{total === 1 ? "" : "s"}</CardTitle>
           <div className="flex flex-wrap items-end gap-3">
+            {isSuperAdmin && (
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Merchant</Label>
+                <Select value={merchantId} onValueChange={(v) => { setMerchantId(v); setBranchId("ALL"); setOffset(0); }}>
+                  <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All merchants</SelectItem>
+                    {merchants.map((m) => <SelectItem key={m.id} value={m.id}>{m.legalName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
                 Direction
@@ -121,7 +152,7 @@ export function AuditPage() {
                 </SelectContent>
               </Select>
             </div>
-            {availableBranches.length > 1 && (
+            {filterBranches.length > 0 && (
               <div className="flex flex-col gap-1.5">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
                   Branch
@@ -138,7 +169,7 @@ export function AuditPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All branches</SelectItem>
-                    {availableBranches.map((b) => (
+                    {filterBranches.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
                         {b.tradeName ?? b.name}
                       </SelectItem>
