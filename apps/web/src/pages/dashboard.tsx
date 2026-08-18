@@ -246,6 +246,7 @@ function MerchantDashboardPage() {
 							sub={`${data.today.invoices} invoice${data.today.invoices === 1 ? "" : "s"} today`}
 							icon={<TrendingUp className="size-4" />}
 							variant="primary"
+							href="/invoices"
 						/>
 						<KpiCard
 							label="Today's Collections"
@@ -254,6 +255,7 @@ function MerchantDashboardPage() {
 							sub={`${data.today.receipts} receipt${data.today.receipts === 1 ? "" : "s"} filed`}
 							icon={<CircleDollarSign className="size-4" />}
 							variant="accent"
+							href="/receipts"
 						/>
 						<KpiCard
 							label="Outstanding Balance"
@@ -262,6 +264,7 @@ function MerchantDashboardPage() {
 							sub={`${data.outstanding.count} unpaid invoice${data.outstanding.count === 1 ? "" : "s"}`}
 							icon={<Banknote className="size-4" />}
 							variant={data.outstanding.total > 0 ? "warning" : "neutral"}
+							href="/invoices?status=UNPAID"
 						/>
 						<KpiCard
 							label="Active Users"
@@ -269,6 +272,7 @@ function MerchantDashboardPage() {
 							sub="Across all roles"
 							icon={<Users className="size-4" />}
 							variant="neutral"
+							href="/users?status=ACTIVE"
 						/>
 					</section>
 
@@ -362,10 +366,10 @@ function MerchantDashboardPage() {
 								) : (
 									<Table>
 										<TableBody>
-											{data.recentInvoices.map((inv) => (
-												<TableRow key={inv.id}>
-													<TableCell>
-														<div className="flex flex-col gap-0.5">
+										{data.recentInvoices.map((inv) => (
+											<TableRow className="cursor-pointer focus-within:bg-muted" key={inv.id}>
+												<TableCell>
+													<Link className="flex flex-col gap-0.5 outline-none" to={`/invoices?open=${inv.id}`}>
 															<span className="text-[13px] font-medium text-foreground">
 																{inv.buyer.legalName}
 															</span>
@@ -378,7 +382,7 @@ function MerchantDashboardPage() {
 																{!isPlaceholderTin(inv.buyer.tin) &&
 																	` · TIN ${inv.buyer.tin}`}
 															</span>
-														</div>
+														</Link>
 													</TableCell>
 													<TableCell className="text-right">
 														<div className="flex flex-col items-end gap-1">
@@ -440,9 +444,9 @@ function MerchantDashboardPage() {
 									<Table>
 										<TableBody>
 											{data.recentReceipts.map((r) => (
-												<TableRow key={r.id}>
+												<TableRow className="cursor-pointer focus-within:bg-muted" key={r.id}>
 													<TableCell>
-														<div className="flex items-center gap-2.5">
+														<Link className="flex items-center gap-2.5 outline-none" to={`/receipts?open=${r.id}`}>
 															<span className="flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-muted text-muted-foreground">
 																{r.kind === "WITHHOLD" ? (
 																	<Percent className="size-3.5" />
@@ -461,7 +465,7 @@ function MerchantDashboardPage() {
 																	· {timeAgo(receiptIssuedAt(r))}
 																</span>
 															</div>
-														</div>
+														</Link>
 													</TableCell>
 													<TableCell className="text-right">
 														<span className="font-mono text-[13px] font-medium tabular-nums">
@@ -519,17 +523,17 @@ function MerchantDashboardPage() {
 								) : (
 									<Table>
 										<TableBody>
-											{data.inventoryAlerts.slice(0, 5).map((item) => (
-												<TableRow key={item.code}>
-													<TableCell>
-														<div className="flex flex-col gap-0.5">
+										{data.inventoryAlerts.slice(0, 5).map((item) => (
+											<TableRow className="cursor-pointer focus-within:bg-muted" key={item.code}>
+												<TableCell>
+													<Link className="flex flex-col gap-0.5 outline-none" to={`/inventory?search=${encodeURIComponent(item.code)}&highlight=${encodeURIComponent(item.code)}`}>
 															<span className="text-[13px] font-medium text-foreground">
 																{item.description}
 															</span>
 															<span className="font-mono text-[11px] text-muted-foreground">
 																{item.code}
 															</span>
-														</div>
+														</Link>
 													</TableCell>
 													<TableCell className="text-right">
 														<span className="font-mono text-[13px] font-medium text-warning tabular-nums">
@@ -675,7 +679,7 @@ function MerchantDashboardPage() {
 																TIN {b.tin}
 															</span>
 														)}
-													</div>
+													</Link>
 												</TableCell>
 												<TableCell className="text-right tabular-nums">
 													<span className="rounded-full bg-muted px-2 py-0.5 text-[12px] font-medium">
@@ -709,6 +713,7 @@ function KpiCard({
 	sub,
 	icon,
 	variant = "neutral",
+	href,
 }: {
 	label: string;
 	value: string;
@@ -716,6 +721,7 @@ function KpiCard({
 	sub: string;
 	icon: React.ReactNode;
 	variant?: KpiVariant;
+	href?: string;
 }) {
 	const styles: Record<
 		KpiVariant,
@@ -746,10 +752,11 @@ function KpiCard({
 	const s = styles[variant];
 	const isColored = false;
 
-	return (
+	const content = (
 		<div
 			className={cn(
 				"relative overflow-hidden rounded-[16px] border p-5 shadow-sm transition-shadow hover:shadow-md",
+				href && "cursor-pointer transition-[transform,box-shadow] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
 				s.card,
 			)}
 		>
@@ -803,6 +810,7 @@ function KpiCard({
 			</div>
 		</div>
 	);
+	return href ? <Link to={href} className="block rounded-[16px]">{content}</Link> : content;
 }
 
 function PeriodCompareCard({
@@ -1146,16 +1154,16 @@ function CashierDashboardPage() {
 								<Table>
 									<TableBody>
 										{data.recentInvoices.map((inv) => (
-											<TableRow key={inv.id}>
+											<TableRow className="cursor-pointer focus-within:bg-muted" key={inv.id}>
 												<TableCell>
-													<div className="flex flex-col gap-0.5">
+													<Link className="flex flex-col gap-0.5 outline-none" to={`/invoices?open=${inv.id}`}>
 														<span className="text-[13px] font-medium">
 															{inv.buyer.legalName}
 														</span>
 														<span className="font-mono text-[11px] text-muted-foreground">
 															#{inv.documentNumber} · {inv.transactionType}
 														</span>
-													</div>
+													</Link>
 												</TableCell>
 												<TableCell className="text-right">
 													<div className="flex flex-col items-end gap-1">

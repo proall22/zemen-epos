@@ -500,6 +500,7 @@ export interface CreateInventoryItemInput {
   nature?: "goods" | "service";
   trackStock?: boolean;
   stockQuantity?: number;
+  openingUnitCost?: number;
   lowStockThreshold?: number;
   /** Branch to scope the item to. Omit / null = merchant-wide (no per-store
    *  stock). Required for the item to participate in the multi-store system. */

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Banknote,
@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { listReceipts, type DocumentFilters } from "@/lib/resources";
+import { getReceipt, listReceipts, type DocumentFilters } from "@/lib/resources";
 import { ScopeToggle, useListScope } from "@/components/scope-toggle";
 import {
   DocumentFilterBar,
@@ -59,6 +59,25 @@ export function ReceiptsPage() {
   const [filters, setFilters] = useState<DocumentFilters>({});
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("open");
+    setSearchParams(next, { replace: true });
+    if (receipts.some((receipt) => receipt.id === openId)) {
+      setActiveId(openId);
+      return;
+    }
+    void getReceipt(openId)
+      .then((receipt) => {
+        setReceipts((current) => current.some((item) => item.id === receipt.id) ? current : [receipt, ...current]);
+        setActiveId(receipt.id);
+      })
+      .catch((error: Error) => setError(error.message));
+  }, [searchParams, receipts, setSearchParams]);
 
   useEffect(() => {
     void refresh();

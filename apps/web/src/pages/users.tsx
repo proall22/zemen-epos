@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CircleCheck,
   CircleX,
@@ -49,13 +50,17 @@ function isLocked(u: ManagedUser): boolean {
 
 export function UsersPage() {
   const { can, user: actor, merchant } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [role, setRole] = useState<UserRole | "ALL">("ALL");
-  const [status, setStatus] = useState<"ALL" | "ACTIVE" | "DISABLED">("ALL");
+  const requestedStatus = searchParams.get("status");
+  const [status, setStatus] = useState<"ALL" | "ACTIVE" | "DISABLED">(
+    requestedStatus === "ACTIVE" || requestedStatus === "DISABLED" ? requestedStatus : "ALL",
+  );
   const [merchantId, setMerchantId] = useState("ALL");
   const [branchId, setBranchId] = useState("ALL");
   const [merchants, setMerchants] = useState<Merchant[]>([]);
@@ -219,7 +224,14 @@ export function UsersPage() {
               </Select>
             </Filter>
             <Filter label="Status">
-              <Select value={status} onValueChange={(v) => { setStatus(v as typeof status); setOffset(0); }}>
+              <Select value={status} onValueChange={(v) => {
+                const nextStatus = v as typeof status;
+                setStatus(nextStatus);
+                setOffset(0);
+                const next = new URLSearchParams(searchParams);
+                if (nextStatus === "ALL") next.delete("status"); else next.set("status", nextStatus);
+                setSearchParams(next, { replace: true });
+              }}>
                 <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="ALL">All</SelectItem><SelectItem value="ACTIVE">Active</SelectItem><SelectItem value="DISABLED">Disabled</SelectItem></SelectContent>
               </Select>

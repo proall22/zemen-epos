@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { ImageOff, Plus, Search, X, Package } from "lucide-react";
 
 import { InventoryFormSheet } from "@/components/inventory-form-sheet";
+import { ErrorCallout } from "@/components/error-callout";
 import { PrintLabelsDialog } from "@/components/print-labels-dialog";
 import { StoreTransferSheet } from "@/components/store-transfer-sheet";
 import { UpcBarcode } from "@/components/upc-barcode";
@@ -50,6 +52,7 @@ const ALL_CATEGORIES = "__all__";
 
 export function InventoryPage() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { can } = useAuth();
   const canCreate = can("inventory.create");
   const canUpdate = can("inventory.update");
@@ -63,7 +66,9 @@ export function InventoryPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [highlightCode, setHighlightCode] = useState(() => searchParams.get("highlight"));
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | null>(null);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [writeOffItem, setWriteOffItem] = useState<InventoryItem | null>(null);
@@ -79,6 +84,17 @@ export function InventoryPage() {
   useEffect(() => setPage(1), [search, categoryId]);
 
   useEffect(() => {
+    if (!highlightCode) return;
+    const handle = setTimeout(() => {
+      setHighlightCode(null);
+      const next = new URLSearchParams(searchParams);
+      next.delete("highlight");
+      setSearchParams(next, { replace: true });
+    }, 5000);
+    return () => clearTimeout(handle);
+  }, [highlightCode]);
+
+  useEffect(() => {
     void listInventoryCategories().then(setCategories).catch(() => setCategories([]));
   }, []);
 
@@ -92,13 +108,14 @@ export function InventoryPage() {
 
   async function refresh(q = search, selectedCategory = categoryId, selectedPage = page) {
     setLoading(true);
+    setLoadError(null);
     try {
       const result = await listInventoryPage(selectedPage, 10, q, selectedCategory === ALL_CATEGORIES ? undefined : selectedCategory);
       setItems(result.items);
       setTotal(result.total);
       setTotalPages(result.totalPages);
-    } catch {
-      // ignore
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "The inventory list could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -153,6 +170,13 @@ export function InventoryPage() {
           </Button>
         )}
       </header>
+
+      {loadError && (
+        <ErrorCallout
+          title="We couldn't load inventory."
+          items={[loadError, "Check your connection and try again shortly."]}
+        />
+      )}
 
 
       <Card className="min-w-0 overflow-visible">
@@ -257,7 +281,12 @@ export function InventoryPage() {
               </TableHeader>
               <TableBody>
                 {items.map((item) => (
-                  <TableRow key={item.id}>
+                  <TableRow
+                    key={item.id}
+                    className={cn(
+                      highlightCode === item.code && "animate-pulse bg-warning/20 ring-2 ring-inset ring-warning/50",
+                    )}
+                  >
                     <TableCell>
                       <Thumbnail src={item.imageUrl} alt={item.description} />
                     </TableCell>

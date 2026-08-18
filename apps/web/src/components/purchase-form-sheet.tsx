@@ -205,8 +205,8 @@ export function PurchaseFormSheet({
       if (!l.storeId) problems.push(`Line ${i + 1}: pick a receiving store.`);
       if (!Number.isFinite(l.quantity) || l.quantity <= 0)
         problems.push(`Line ${i + 1}: quantity must be > 0.`);
-      if (!Number.isFinite(l.unitCost) || l.unitCost < 0)
-        problems.push(`Line ${i + 1}: unit cost must be 0 or more.`);
+      if (!Number.isFinite(l.unitCost) || l.unitCost <= 0)
+        problems.push(`Line ${i + 1}: enter a unit cost greater than 0.`);
     }
     if (problems.length) {
       setError({ title: "Please complete every line.", items: problems });
@@ -403,7 +403,7 @@ export function PurchaseFormSheet({
                       <Input
                         type="number"
                         step="any"
-                        min="0"
+                        min="0.0001"
                         value={line.quantity}
                         onChange={(e) => updateLine(idx, "quantity", e.target.value)}
                       />

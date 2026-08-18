@@ -55,7 +55,10 @@ export function InvoicesPage() {
   const [draftError, setDraftError] = useState<string | null>(null);
   const [checkOpen, setCheckOpen] = useState(false);
   const [scope, setScope] = useListScope("eirms:list-scope:invoices");
-  const [filters, setFilters] = useState<DocumentFilters>({});
+  const [filters, setFilters] = useState<DocumentFilters>(() => {
+    const status = new URLSearchParams(window.location.search).get("status");
+    return status ? { status } : {};
+  });
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
