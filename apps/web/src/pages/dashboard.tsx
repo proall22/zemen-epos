@@ -679,7 +679,7 @@ function MerchantDashboardPage() {
 																TIN {b.tin}
 															</span>
 														)}
-													</Link>
+													</div>
 												</TableCell>
 												<TableCell className="text-right tabular-nums">
 													<span className="rounded-full bg-muted px-2 py-0.5 text-[12px] font-medium">

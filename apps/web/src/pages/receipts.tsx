@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { FindInvoiceByIrnDialog } from "@/components/find-invoice-by-irn-dialog";
+import { ErrorCallout } from "@/components/error-callout";
 import { PaymentReceiptSheet } from "@/components/payment-receipt-sheet";
 import { ReceiptDetailSheet } from "@/components/receipt-detail-sheet";
 import { Badge } from "@/components/ui/badge";
@@ -172,7 +173,10 @@ export function ReceiptsPage() {
         </CardHeader>
         <CardContent>
           {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
+            <ErrorCallout
+              title="We couldn't load receipts."
+              items={[error, "Check your connection and try again shortly."]}
+            />
           )}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>

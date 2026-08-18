@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { UserFormSheet } from "@/components/user-form-sheet";
+import { ErrorCallout } from "@/components/error-callout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -243,7 +244,10 @@ export function UsersPage() {
         </CardHeader>
         <CardContent>
           {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
+            <ErrorCallout
+              title="We couldn't load the user list."
+              items={[error, "Check your connection, then select Refresh to try again."]}
+            />
           )}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>

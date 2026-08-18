@@ -241,6 +241,7 @@ export function InventoryPage() {
                 <MobileItemCard
                   key={item.id}
                   item={item}
+                  highlighted={highlightCode === item.code}
                   categoryName={categories.find((category) => category.id === item.categoryId)?.name ?? "Uncategorized"}
                   stores={stores}
                   canUpdate={canUpdate}
@@ -435,10 +436,11 @@ export function InventoryPage() {
 }
 
 function MobileItemCard({
-  item, categoryName, stores, canUpdate, canTransfer, canWriteOff,
+  item, highlighted, categoryName, stores, canUpdate, canTransfer, canWriteOff,
   onEdit, onTransfer, onWriteOff, onRefresh,
 }: {
   item: InventoryItem;
+  highlighted: boolean;
   categoryName: string;
   stores: Store[];
   canUpdate: boolean;
@@ -451,7 +453,10 @@ function MobileItemCard({
 }) {
   const { t } = useTranslation();
   return (
-    <article className="rounded-xl border bg-card p-3 shadow-sm">
+    <article className={cn(
+      "rounded-xl border bg-card p-3 shadow-sm",
+      highlighted && "animate-pulse bg-warning/20 ring-2 ring-warning/50",
+    )}>
       <div className="flex min-w-0 gap-3">
         <Thumbnail src={item.imageUrl} alt={item.description} />
         <div className="min-w-0 flex-1">
