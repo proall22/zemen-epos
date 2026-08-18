@@ -232,18 +232,9 @@ export class UsersService implements OnModuleInit {
       }
       merchantId = callerMerchantId;
     } else if (!merchantId) {
-      // Get the first available merchant
-      const firstMerchant = await this.prisma.merchant.findFirst({
-        select: { id: true },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      if (!firstMerchant) {
-        throw new NotFoundException(
-          'No merchant found. Please create a merchant first.',
-        );
-      }
-      merchantId = firstMerchant.id;
+      throw new ConflictException(
+        'Select the merchant this user belongs to. Super Admin cannot create a merchant user with an unspecified tenant.',
+      );
     }
 
     const merchant = await this.prisma.merchant.findUnique({

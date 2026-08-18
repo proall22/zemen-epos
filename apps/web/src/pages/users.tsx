@@ -270,7 +270,9 @@ export function UsersPage() {
                           ? "—"
                           : u.branchId
                             ? (branchesById.get(u.branchId)?.name ?? u.branchId)
-                            : "Any"}
+                            : u.role === "MERCHANT_ADMIN"
+                              ? "All merchant branches"
+                              : "No branch assigned"}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1.5">
