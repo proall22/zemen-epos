@@ -21,6 +21,7 @@ const eirmsConfig: EirmsConfig = {
   clientSecret: 'x',
   apikey: 'x',
   tin: '0000',
+  systemNumber: 'TEST-SYSTEM',
   seller: {
     legalName: 'Zemen-ePos Financial Services S.C.',
     email: 'einvoice@e-pay.et',
@@ -49,7 +50,25 @@ function invoiceFixture(over: Partial<InvoiceForEmail> = {}): InvoiceForEmail {
 }
 
 describe('EmailRenderer', () => {
-  const renderer = new EmailRenderer(notifConfig, eirmsConfig);
+  const i18n = {
+    t: jest.fn((key: string, params?: Record<string, string | number>) => {
+      if (key === 'notifications.email.invoice.registered.subject') return `Invoice #${params?.docNumber} registered`;
+      if (key === 'notifications.email.memo.credit.subject') return 'Credit memo issued';
+      return key.split('.').at(-1) ?? key;
+    }),
+    tMany: jest.fn((items: Array<{ key: string; params?: Record<string, string | number> }>) =>
+      Promise.resolve(items.map(({ key, params }) => {
+        if (key.endsWith('.subject')) {
+          if (key.includes('invoice.registered')) return `Invoice #${params?.docNumber} registered`;
+          if (key.includes('memo.credit')) return 'Credit memo issued';
+        }
+        if (key.endsWith('.heading')) return params?.docNumber ? `Invoice #${params.docNumber}` : 'Document update';
+        if (key.endsWith('.body')) return 'Your document is ready.';
+        if (key.endsWith('.cta')) return 'View document';
+        return key.split('.').at(-1) ?? key;
+      }))),
+  };
+  const renderer = new EmailRenderer(notifConfig, eirmsConfig, i18n as never);
 
   it('renders a registered invoice with key fields, QR + view link', async () => {
     const { subject, html } = await renderer.renderInvoice(

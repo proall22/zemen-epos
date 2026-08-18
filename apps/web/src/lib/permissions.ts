@@ -36,7 +36,6 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   "store.view",
   "vendor.view",
   "purchase.view",
-  "report.view",
 ];
 
 /**

@@ -31,11 +31,34 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Sign in to continue.');
     }
     try {
-      const payload = this.jwt.verify<JwtPayload>(token);
+      const payload = this.jwt.verify<JwtPayload & { purpose?: string }>(token);
+      // Pending email-verification / 2FA tokens share the signing key but are
+      // deliberately not access tokens. Fail closed even on routes without a
+      // permission decorator (for example /auth/me).
+      const roles = new Set([
+        'SUPER_ADMIN',
+        'ADMIN',
+        'MERCHANT_ADMIN',
+        'BRANCH_ADMIN',
+        'ACCOUNTANT',
+        'STORE_KEEPER',
+        'CASHIER',
+        'SUPPORT',
+      ]);
+      if (
+        payload.purpose ||
+        !payload.sub ||
+        !payload.email ||
+        !roles.has(payload.role)
+      ) {
+        throw new Error('Not an access token');
+      }
       (request as Request & { user: JwtPayload }).user = payload;
       return true;
     } catch {
-      throw new UnauthorizedException('Your session has expired. Please sign in again.');
+      throw new UnauthorizedException(
+        'Your session has expired. Please sign in again.',
+      );
     }
   }
 }

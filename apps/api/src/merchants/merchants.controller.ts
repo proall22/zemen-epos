@@ -1,6 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Branch, BranchStockPolicy, Merchant } from '@prisma/client';
+import {
+  LegalDocumentStatus,
+  type Branch,
+  type BranchStockPolicy,
+  type Merchant,
+} from '@prisma/client';
 
 import { RequirePermissions } from '../auth/require-permissions.decorator';
 import { CreateBranchDto } from './dto/create-branch.dto';
@@ -12,6 +30,7 @@ import {
   MerchantsService,
   type MerchantWithOwner,
   type PendingBranchReview,
+  type RegistrationReview,
 } from './merchants.service';
 
 /** Branch shape returned to clients — strips secret credentials. Callers see a
@@ -103,6 +122,62 @@ export class MerchantsController {
 
   // ----- /merchants ---------------------------------------------------------
 
+  @Get('platform/registrations')
+  @RequirePermissions('merchant.create')
+  @ApiOperation({
+    summary: 'List legal registration documents for Super Admin review.',
+  })
+  registrationReviews(
+    @Query('status') status?: LegalDocumentStatus,
+  ): Promise<RegistrationReview[]> {
+    return this.merchants.listRegistrationReviews(status);
+  }
+
+  @Get('platform/registrations/:merchantId/document')
+  @RequirePermissions('merchant.create')
+  @ApiOperation({
+    summary: 'Securely open a registration document (Super Admin only).',
+  })
+  async registrationDocument(
+    @Param('merchantId') merchantId: string,
+  ): Promise<StreamableFile> {
+    const file = await this.merchants.openRegistrationDocument(merchantId);
+    return new StreamableFile(file.bytes, {
+      type: file.mediaType,
+      disposition: `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      length: file.bytes.length,
+    });
+  }
+
+  @Get('merchants/:id/registration-status')
+  @RequirePermissions('merchant.view')
+  @ApiOperation({ summary: 'Current registration and legal-document status.' })
+  registrationStatus(@Param('id') id: string): Promise<RegistrationReview> {
+    return this.merchants.getRegistrationReview(id);
+  }
+
+  @Post('merchants/:id/registration-document')
+  @RequirePermissions('merchant.update')
+  @UseInterceptors(
+    FileInterceptor('legalDocument', {
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+    }),
+  )
+  @ApiOperation({
+    summary: 'Replace a rejected legal document (merchant owner only).',
+  })
+  replaceRegistrationDocument(
+    @Param('id') id: string,
+    @UploadedFile()
+    file?: { buffer: Buffer; originalname: string; size: number },
+  ): Promise<RegistrationReview> {
+    if (!file)
+      throw new BadRequestException(
+        'A legal registration document is required.',
+      );
+    return this.merchants.replaceRejectedRegistrationDocument(id, file);
+  }
+
   @Get('merchants')
   @RequirePermissions('merchant.view')
   @ApiOperation({
@@ -161,7 +236,9 @@ export class MerchantsController {
 
   @Get('platform/branch-approvals')
   @RequirePermissions('merchant.create')
-  @ApiOperation({ summary: 'List additional branches awaiting Super Admin approval.' })
+  @ApiOperation({
+    summary: 'List additional branches awaiting Super Admin approval.',
+  })
   pendingBranchReviews(): Promise<PendingBranchReview[]> {
     return this.merchants.listPendingBranchReviews();
   }
@@ -175,7 +252,9 @@ export class MerchantsController {
     // counts are small (≤ a few dozen per merchant in practice); a batched
     // read would need a different KV layout.
     const [flags, signing] = await Promise.all([
-      Promise.all(branches.map((b) => this.merchants.getBranchCredFlags(id, b.id))),
+      Promise.all(
+        branches.map((b) => this.merchants.getBranchCredFlags(id, b.id)),
+      ),
       Promise.all(
         branches.map((b) => this.merchants.getBranchSigningFlags(id, b.id)),
       ),
@@ -201,17 +280,32 @@ export class MerchantsController {
   @Post('merchants/:id/branches/:branchId/approve')
   @RequirePermissions('merchant.create')
   @ApiOperation({ summary: 'Approve a pending branch (super-admin only).' })
-  async approveBranch(@Param('id') id: string, @Param('branchId') branchId: string): Promise<SafeBranch> {
+  async approveBranch(
+    @Param('id') id: string,
+    @Param('branchId') branchId: string,
+  ): Promise<SafeBranch> {
     const branch = await this.merchants.approveBranch(id, branchId);
-    return toSafeBranch(branch, await this.merchants.getBranchCredFlags(id, branch.id), await this.merchants.getBranchSigningFlags(id, branch.id));
+    return toSafeBranch(
+      branch,
+      await this.merchants.getBranchCredFlags(id, branch.id),
+      await this.merchants.getBranchSigningFlags(id, branch.id),
+    );
   }
 
   @Post('merchants/:id/branches/:branchId/reject')
   @RequirePermissions('merchant.create')
   @ApiOperation({ summary: 'Reject a pending branch (super-admin only).' })
-  async rejectBranch(@Param('id') id: string, @Param('branchId') branchId: string, @Body() body: RejectMerchantDto): Promise<SafeBranch> {
+  async rejectBranch(
+    @Param('id') id: string,
+    @Param('branchId') branchId: string,
+    @Body() body: RejectMerchantDto,
+  ): Promise<SafeBranch> {
     const branch = await this.merchants.rejectBranch(id, branchId, body);
-    return toSafeBranch(branch, await this.merchants.getBranchCredFlags(id, branch.id), await this.merchants.getBranchSigningFlags(id, branch.id));
+    return toSafeBranch(
+      branch,
+      await this.merchants.getBranchCredFlags(id, branch.id),
+      await this.merchants.getBranchSigningFlags(id, branch.id),
+    );
   }
 
   @Get('merchants/:id/branches/:branchId/stats')
@@ -219,10 +313,7 @@ export class MerchantsController {
   @ApiOperation({
     summary: 'Per-branch activity snapshot for the merchant admin drawer.',
   })
-  branchStats(
-    @Param('id') id: string,
-    @Param('branchId') branchId: string,
-  ) {
+  branchStats(@Param('id') id: string, @Param('branchId') branchId: string) {
     return this.merchants.branchStats(id, branchId);
   }
 

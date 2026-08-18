@@ -53,11 +53,16 @@ read_json_field() {
   fi
   case "$2" in
     *\[0\]*)
-      # Array-first-element form, e.g. `.unseal_keys_b64[0]` → matches
-      # `"unseal_keys_b64": ["XXXX"`.
+      # Vault pretty-prints arrays across multiple lines, so find the key and
+      # extract the first quoted value from a following line.
       key="$(echo "$2" | sed 's/^\.//; s/\[0\]$//')"
-      grep -o "\"$key\":[[:space:]]*\[\"[^\"]*\"" "$1" | head -1 \
-        | sed 's/.*\["\([^"]*\)".*/\1/'
+      awk -v needle="\"$key\"" '
+        index($0, needle) { found = 1; next }
+        found && match($0, /"[^"]+"/) {
+          print substr($0, RSTART + 1, RLENGTH - 2)
+          exit
+        }
+      ' "$1"
       ;;
     *)
       key="$(echo "$2" | sed 's/^\.//')"

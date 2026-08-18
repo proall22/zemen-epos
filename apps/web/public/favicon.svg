@@ -1,4 +1,5 @@
-<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zemen-ePos">
-  <rect width="16" height="16" rx="2" fill="#5700FF"/>
-  <text x="8" y="13" fill="white" font-family="'Noto Serif Display SemiCondensed', 'Noto Serif Display', 'Times New Roman', serif" font-size="14" font-weight="900" text-anchor="middle">Z</text>
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zemen ePOS">
+  <rect width="40" height="40" rx="10" fill="#5700FF"/>
+  <path d="M10.5 10.5h20v5.1L18.2 27h12.3v4.5h-21v-5.1l12.4-11.3H10.5v-4.6Z" fill="#fff"/>
+  <path d="M27.5 8.5h4v4h-4z" fill="#BDA7FF"/>
 </svg>

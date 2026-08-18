@@ -7,6 +7,7 @@ import {
   Languages,
   LayoutDashboard,
   MailCheck,
+  ClipboardCheck,
   Package,
   PackagePlus,
   Percent,
@@ -92,9 +93,21 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "invoice.view",
     sectionKey: "nav.workflow",
     superAdminSectionKey: "nav.operations",
-    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "CASHIER", "SUPPORT"],
+    sidebarRoles: [
+      "SUPER_ADMIN",
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "CASHIER",
+      "SUPPORT",
+    ],
   },
-  { to: "/invoices/:id", labelKey: "nav.invoices", icon: FileText, perm: "invoice.view" },
+  {
+    to: "/invoices/:id",
+    labelKey: "nav.invoices",
+    icon: FileText,
+    perm: "invoice.view",
+  },
   {
     to: "/receipts",
     labelKey: "nav.receipts",
@@ -102,9 +115,21 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "receipt.view",
     sectionKey: "nav.workflow",
     superAdminSectionKey: "nav.operations",
-    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "CASHIER", "SUPPORT"],
+    sidebarRoles: [
+      "SUPER_ADMIN",
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "CASHIER",
+      "SUPPORT",
+    ],
   },
-  { to: "/receipts/:id", labelKey: "nav.receipts", icon: Banknote, perm: "receipt.view" },
+  {
+    to: "/receipts/:id",
+    labelKey: "nav.receipts",
+    icon: Banknote,
+    perm: "receipt.view",
+  },
   {
     to: "/withholding",
     labelKey: "nav.withholding",
@@ -121,7 +146,13 @@ export const NAV_ROUTES: NavRoute[] = [
     icon: Package,
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
-    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "SUPER_ADMIN",
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
     end: true,
   },
   {
@@ -131,7 +162,12 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "store.view",
     sectionKey: "nav.catalogue",
     hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
   },
   {
     to: "/inventory/movements",
@@ -140,7 +176,12 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
     hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
   },
   {
     to: "/inventory/vendors",
@@ -149,7 +190,12 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "vendor.view",
     sectionKey: "nav.catalogue",
     hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
   },
   {
     to: "/inventory/purchases",
@@ -158,7 +204,12 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "purchase.view",
     sectionKey: "nav.catalogue",
     hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
   },
   {
     to: "/inventory/harmonization",
@@ -167,7 +218,12 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
     hideForPlatformAdmin: true,
-    sidebarRoles: ["MERCHANT_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "STORE_KEEPER"],
+    sidebarRoles: [
+      "MERCHANT_ADMIN",
+      "BRANCH_ADMIN",
+      "ACCOUNTANT",
+      "STORE_KEEPER",
+    ],
   },
 
   {
@@ -198,6 +254,15 @@ export const NAV_ROUTES: NavRoute[] = [
     to: "/branch-approvals",
     labelKey: "nav.branchApprovals",
     icon: Building2,
+    perm: "merchant.create",
+    sectionKey: "nav.access",
+    superAdminSectionKey: "nav.platform",
+    sidebarRoles: ["SUPER_ADMIN"],
+  },
+  {
+    to: "/super-admin/registrations",
+    labelKey: "nav.registrationReviews",
+    icon: ClipboardCheck,
     perm: "merchant.create",
     sectionKey: "nav.access",
     superAdminSectionKey: "nav.platform",
@@ -272,13 +337,17 @@ export function routeFor(path: string): NavRoute | undefined {
 export function landingRoute(
   can: (code: string) => boolean,
 ): string | undefined {
-  const preferred = ["/dashboard", "/sale", "/invoices", "/inventory", "/merchants"];
+  const preferred = [
+    "/dashboard",
+    "/sale",
+    "/invoices",
+    "/inventory",
+    "/merchants",
+  ];
   for (const path of preferred) {
     const route = routeFor(path);
     if (route && routeAllows(route, can)) return path;
   }
-  const first = NAV_ROUTES.find(
-    (r) => r.sectionKey && routeAllows(r, can),
-  );
+  const first = NAV_ROUTES.find((r) => r.sectionKey && routeAllows(r, can));
   return first?.to;
 }

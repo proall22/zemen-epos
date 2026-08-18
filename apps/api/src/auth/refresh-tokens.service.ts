@@ -1,10 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import {
-  Injectable,
-  Logger,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import type { RefreshToken, User } from '@prisma/client';
 
 import { RequestContextService } from '../audit/request-context.service';

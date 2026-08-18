@@ -1,25 +1,26 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Loader2,
-  ShieldCheck,
-  Workflow,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 
+import { AuthBrandPanel } from "@/components/auth-brand-panel";
 import { BranchLocationPicker } from "@/components/branch-location-picker";
 import { ZemenEPosLogo } from "@/components/brand/zemen-epos-logo";
 import { ErrorCallout } from "@/components/error-callout";
+import { GoogleAuthButton } from "@/components/google-auth-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { readApiMessage, readUserMessages } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
-import type { SignupMerchantInput } from "@/lib/resources";
+import {
+  signupMerchantWithGoogle,
+  type SignupMerchantInput,
+} from "@/lib/resources";
+import { GOOGLE_ENROLLMENT_KEY } from "@/pages/google-oauth-callback";
 import { cn } from "@/lib/utils";
+import { savePendingAuth } from "@/lib/pending-auth";
+import type { PendingAuthResponse } from "@/lib/types";
 import {
   TURNSTILE_ENABLED,
   TurnstileWidget,
@@ -34,8 +35,10 @@ import {
  * split is purely a UX concern.
  */
 export function SignupPage() {
-  const { status, signup } = useAuth();
+  const { status, signup, completeAuthentication } = useAuth();
   const navigate = useNavigate();
+  const googleToken = sessionStorage.getItem(GOOGLE_ENROLLMENT_KEY);
+  const googleProfile = googleToken ? readGoogleProfile(googleToken) : null;
 
   if (status === "authed") {
     return <Navigate to="/merchants" replace />;
@@ -43,65 +46,18 @@ export function SignupPage() {
 
   return (
     <div className="grid min-h-svh lg:grid-cols-[1.1fr_1fr]">
-      <BrandSide />
-      <FormSide signup={signup} onDone={() => navigate("/merchants")} />
+      <AuthBrandPanel registration />
+      <FormSide
+        signup={signup}
+        googleToken={googleProfile ? googleToken : null}
+        googleProfile={googleProfile}
+        completeAuthentication={completeAuthentication}
+        onDone={(pending) => {
+          savePendingAuth(pending);
+          navigate("/verify-email");
+        }}
+      />
     </div>
-  );
-}
-
-function BrandSide() {
-  return (
-    <aside className="relative hidden overflow-hidden bg-[#111827] text-white lg:flex lg:flex-col">
-      <div className="relative z-10 flex flex-1 flex-col justify-between p-12">
-        <header className="flex items-center gap-3">
-          <ZemenEPosLogo mono className="h-6 w-auto text-white" />
-          <span className="text-white/40">·</span>
-          <span className="text-sm font-medium tracking-tight">e-invoice</span>
-        </header>
-
-        <div className="flex max-w-md flex-col gap-6">
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em]">
-            Self-onboarding
-          </span>
-          <h1 className="text-4xl font-semibold leading-tight tracking-tight">
-            Bring your business
-            <br />
-            online.
-          </h1>
-          <p className="text-base leading-relaxed text-white/80">
-            Register your merchant in minutes. We'll set up your account
-            pending verification — once approved, you can issue MOR-compliant
-            invoices from any branch.
-          </p>
-
-          <ul className="flex flex-col gap-3 pt-2 text-sm text-white/85">
-            <li className="flex items-start gap-2.5">
-              <Workflow className="mt-0.5 size-4 shrink-0 text-white" />
-              <span>
-                One account. Add branches, cashiers, and inventory after.
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-white" />
-              <span>
-                EIRMS credentials stay with you — paste them on your branch
-                when MOR issues them.
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-white" />
-              <span>
-                No back-and-forth — admin approval is the last step.
-              </span>
-            </li>
-          </ul>
-        </div>
-
-        <footer className="text-xs text-white/50">
-          &copy; {new Date().getFullYear()} Zemen-ePos Financial Services
-        </footer>
-      </div>
-    </aside>
   );
 }
 
@@ -140,6 +96,8 @@ interface FormState {
   ownerName: string;
   ownerEmail: string;
   ownerPassword: string;
+  ownerPasswordConfirm: string;
+  legalDocument: File | null;
 }
 
 function blank(): FormState {
@@ -161,11 +119,17 @@ function blank(): FormState {
     ownerName: "",
     ownerEmail: "",
     ownerPassword: "",
+    ownerPasswordConfirm: "",
+    legalDocument: null,
   };
 }
 
 /** Per-step required-field validation. Returns an error message or null. */
-function validateStep(step: Step, form: FormState): string | null {
+function validateStep(
+  step: Step,
+  form: FormState,
+  googleMode = false,
+): string | null {
   switch (step) {
     case "business":
       if (!form.legalName.trim()) return "Legal name is required.";
@@ -176,9 +140,15 @@ function validateStep(step: Step, form: FormState): string | null {
       if (!form.tin.trim()) return "TIN is required.";
       if (!/^\d{10}$/.test(form.tin.trim()))
         return "TIN must contain exactly 10 digits.";
-      if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+      if (
+        form.email.trim() &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+      )
         return "Enter a valid business email address.";
-      if (form.phone.trim() && !/^\+?[0-9][0-9 ()-]{6,28}$/.test(form.phone.trim()))
+      if (
+        form.phone.trim() &&
+        !/^\+?[0-9][0-9 ()-]{6,28}$/.test(form.phone.trim())
+      )
         return "Enter a valid phone number.";
       return null;
     case "address":
@@ -194,21 +164,46 @@ function validateStep(step: Step, form: FormState): string | null {
         return "Enter a valid owner email address.";
       if (form.ownerName.trim() && form.ownerName.trim().length < 2)
         return "Owner name must be at least 2 characters.";
-      if (!form.ownerPassword) return "Password is required.";
-      if (form.ownerPassword.length < 8)
-        return "Password must be at least 8 characters.";
+      if (!googleMode) {
+        if (!form.ownerPassword) return "Password is required.";
+        if (form.ownerPassword.length < 8)
+          return "Password must be at least 8 characters.";
+        if (form.ownerPassword !== form.ownerPasswordConfirm)
+          return "Passwords do not match.";
+      }
+      if (!form.legalDocument) return "A legal document is required.";
+      if (form.legalDocument.size > 5 * 1024 * 1024)
+        return "Legal document must be no larger than 5 MB.";
+      if (
+        !["application/pdf", "image/jpeg", "image/png"].includes(
+          form.legalDocument.type,
+        )
+      )
+        return "Choose a PDF, JPEG, or PNG legal document.";
       return null;
   }
 }
 
 function FormSide({
   signup,
+  googleToken,
+  googleProfile,
+  completeAuthentication,
   onDone,
 }: {
-  signup: (input: SignupMerchantInput) => Promise<void>;
-  onDone: () => void;
+  signup: (input: SignupMerchantInput) => Promise<PendingAuthResponse>;
+  googleToken: string | null;
+  googleProfile: { email: string; name: string } | null;
+  completeAuthentication: (
+    result: import("@/lib/types").LoginResponse,
+  ) => Promise<void>;
+  onDone: (pending: PendingAuthResponse) => void;
 }) {
-  const [form, setForm] = useState<FormState>(blank);
+  const [form, setForm] = useState<FormState>(() => ({
+    ...blank(),
+    ownerEmail: googleProfile?.email ?? "",
+    ownerName: googleProfile?.name ?? "",
+  }));
   const [stepIdx, setStepIdx] = useState(0);
   // Tracks the furthest step the user has reached so we can let them jump
   // back to any visited step without unblocking arbitrary forward jumps.
@@ -227,7 +222,7 @@ function FormSide({
   }
 
   function goNext() {
-    const err = validateStep(step, form);
+    const err = validateStep(step, form, Boolean(googleToken));
     if (err) {
       setError({ title: err, items: [] });
       return;
@@ -255,7 +250,7 @@ function FormSide({
     // gated on Next, but we re-check the cheap required fields in case the
     // user mutated state and skipped via back+forward.
     for (const s of STEPS) {
-      const err = validateStep(s, form);
+      const err = validateStep(s, form, Boolean(googleToken));
       if (err) {
         const idx = STEPS.indexOf(s);
         setStepIdx(idx);
@@ -263,7 +258,7 @@ function FormSide({
         return;
       }
     }
-    if (TURNSTILE_ENABLED && !turnstileToken) {
+    if (!googleToken && TURNSTILE_ENABLED && !turnstileToken) {
       setError({
         title: "Please complete the verification challenge before submitting.",
         items: [],
@@ -273,7 +268,7 @@ function FormSide({
     setBusy(true);
     setError(null);
     try {
-      await signup({
+      const common = {
         merchant: {
           legalName: form.legalName.trim(),
           tradeName: form.tradeName.trim() || undefined,
@@ -293,24 +288,38 @@ function FormSide({
           latitude: form.branchLocation?.latitude,
           longitude: form.branchLocation?.longitude,
         },
-        owner: {
-          email: form.ownerEmail.trim(),
-          password: form.ownerPassword,
-          name: form.ownerName.trim() || undefined,
-        },
-        turnstileToken: turnstileToken ?? undefined,
-      });
-      onDone();
+        legalDocument: form.legalDocument!,
+      };
+      if (googleToken) {
+        const session = await signupMerchantWithGoogle({
+          ...common,
+          googleToken,
+        });
+        sessionStorage.removeItem(GOOGLE_ENROLLMENT_KEY);
+        await completeAuthentication(session);
+        window.location.assign("/dashboard");
+      } else {
+        const pending = await signup({
+          ...common,
+          owner: {
+            email: form.ownerEmail.trim(),
+            password: form.ownerPassword,
+            name: form.ownerName.trim() || undefined,
+          },
+          turnstileToken: turnstileToken ?? undefined,
+        });
+        onDone(pending);
+      }
     } catch (err) {
       setBusy(false);
       if (err instanceof ApiError) {
         setError({
-          title: readApiMessage(err.body) ?? "Couldn't create your account.",
+          title: readApiMessage(err.body) ?? "Unable to create the account.",
           items: readUserMessages(err.body),
         });
       } else {
         setError({
-          title: "Couldn't reach the server. Check your connection.",
+          title: "Unable to connect. Check your connection and try again.",
           items: [],
         });
       }
@@ -318,246 +327,350 @@ function FormSide({
   }
 
   return (
-    <main className="flex items-start justify-center bg-background px-6 py-10">
+    <main className="flex min-h-svh items-start justify-center bg-background px-4 py-8 sm:px-6 sm:py-10 lg:min-h-0">
       <div className="flex w-full max-w-2xl flex-col gap-6">
         <div className="flex flex-col items-center gap-3 lg:hidden">
           <ZemenEPosLogo className="h-6 w-auto text-foreground" />
-          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            e-invoice
-          </span>
+          <span className="text-xs text-muted-foreground">Zemen ePOS</span>
         </div>
 
         <header className="flex flex-col gap-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Create your merchant account
-          </h2>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Create your Zemen ePOS account
+          </h1>
           <p className="text-sm text-muted-foreground">
             {step === "business" &&
-              "Tell us about your business — the legal name and TIN MOR will see."}
+              "Enter the registered details for your business."}
             {step === "address" &&
-              "Where is your business registered? Optional, but helps populate your invoices."}
-            {step === "branch" &&
-              "Your first branch. Drop a pin so customers know where to find you."}
+              "Add the address shown on your business records. These fields are optional."}
+            {step === "branch" && "Set up the first branch for this account."}
             {step === "owner" &&
-              "Create the owner login. You'll be the merchant admin and can invite more users after."}
+              "Create the account owner login and submit the registration document."}
           </p>
         </header>
 
-        <Stepper currentIdx={stepIdx} maxReached={maxReached} onJump={jumpTo} />
-
-        {step === "business" && (
-          <Card>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Legal name *" span={2}>
-                <Input
-                  value={form.legalName}
-                  onChange={(e) => update("legalName", e.target.value)}
-                  minLength={3}
-                  maxLength={200}
-                  autoFocus
-                  required
-                />
-              </Field>
-              <Field label="Trade name">
-                <Input
-                  value={form.tradeName}
-                  onChange={(e) => update("tradeName", e.target.value)}
-                />
-              </Field>
-              <Field label="TIN *">
-                <Input
-                  value={form.tin}
-                  onChange={(e) => update("tin", e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  inputMode="numeric"
-                  pattern="[0-9]{10}"
-                  minLength={10}
-                  maxLength={10}
-                  required
-                />
-              </Field>
-              <Field label="VAT number">
-                <Input
-                  value={form.vatNumber}
-                  onChange={(e) => update("vatNumber", e.target.value)}
-                />
-              </Field>
-              <Field label="Business email">
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => update("email", e.target.value)}
-                />
-              </Field>
-              <Field label="Business phone" span={2}>
-                <Input
-                  value={form.phone}
-                  onChange={(e) => update("phone", e.target.value)}
-                />
-              </Field>
+        {!googleToken && stepIdx === 0 && (
+          <div className="space-y-3">
+            <GoogleAuthButton intent="signup" />
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="h-px flex-1 bg-border" />
+              <span>or register with email</span>
+              <span className="h-px flex-1 bg-border" />
             </div>
-          </Card>
+          </div>
+        )}
+        {googleToken && (
+          <div className="rounded-lg border border-emerald-600/25 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Google verified <strong>{googleProfile?.email}</strong>. Complete
+            the business details and legal-document submission below.
+          </div>
         )}
 
-        {step === "address" && (
-          <Card>
-            <p className="mb-3 text-xs text-muted-foreground">
-              All optional — you can fill these in later from your merchant
-              settings.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Region">
-                <Input
-                  value={form.region}
-                  onChange={(e) => update("region", e.target.value)}
-                />
-              </Field>
-              <Field label="Zone">
-                <Input
-                  value={form.zone}
-                  onChange={(e) => update("zone", e.target.value)}
-                />
-              </Field>
-              <Field label="City">
-                <Input
-                  value={form.city}
-                  onChange={(e) => update("city", e.target.value)}
-                />
-              </Field>
-              <Field label="Wereda">
-                <Input
-                  value={form.wereda}
-                  onChange={(e) => update("wereda", e.target.value)}
-                />
-              </Field>
-              <Field label="Kebele">
-                <Input
-                  value={form.kebele}
-                  onChange={(e) => update("kebele", e.target.value)}
-                />
-              </Field>
-              <Field label="House #">
-                <Input
-                  value={form.houseNumber}
-                  onChange={(e) => update("houseNumber", e.target.value)}
-                />
-              </Field>
-            </div>
-          </Card>
-        )}
-
-        {step === "branch" && (
-          <Card>
-            <div className="flex flex-col gap-4">
-              <Field label="Branch name">
-                <Input
-                  value={form.branchName}
-                  onChange={(e) => update("branchName", e.target.value)}
-                  minLength={3}
-                  maxLength={120}
-                  placeholder="Main"
-                />
-                <p className="text-xs text-muted-foreground">
-                  You can add more branches and paste EIRMS credentials after
-                  sign-in.
-                </p>
-              </Field>
-              <div className="flex flex-col gap-2">
-                <Label className="text-xs text-muted-foreground">
-                  Location pin
-                </Label>
-                <BranchLocationPicker
-                  value={form.branchLocation}
-                  onChange={(next) => update("branchLocation", next)}
-                />
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {step === "owner" && (
-          <Card>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Full name" span={2}>
-                <Input
-                  value={form.ownerName}
-                  onChange={(e) => update("ownerName", e.target.value)}
-                  placeholder="Optional"
-                />
-              </Field>
-              <Field label="Email *" span={2}>
-                <Input
-                  type="email"
-                  autoComplete="email"
-                  value={form.ownerEmail}
-                  onChange={(e) => update("ownerEmail", e.target.value)}
-                  maxLength={254}
-                  required
-                />
-              </Field>
-              <Field label="Password * (min 8)" span={2}>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.ownerPassword}
-                  onChange={(e) => update("ownerPassword", e.target.value)}
-                  minLength={8}
-                  required
-                />
-              </Field>
-            </div>
-          </Card>
-        )}
-
-        {isLast && (
-          <TurnstileWidget
-            onVerify={setTurnstileToken}
-            onExpire={() => setTurnstileToken(null)}
+        <form
+          className="flex flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (isLast) void handleSubmit();
+            else goNext();
+          }}
+          noValidate
+        >
+          <Stepper
+            currentIdx={stepIdx}
+            maxReached={maxReached}
+            onJump={jumpTo}
           />
-        )}
 
-        {error && <ErrorCallout title={error.title} items={error.items} />}
-
-        <div className="flex items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={goBack}
-            disabled={stepIdx === 0 || busy}
-          >
-            <ArrowLeft className="size-4" />
-            Back
-          </Button>
-          {isLast ? (
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={busy}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              {busy ? "Creating account…" : "Create account"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={goNext}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              Continue
-              <ArrowRight className="size-4" />
-            </Button>
+          {step === "business" && (
+            <Card>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field id="business-legal-name" label="Legal name *" span={2}>
+                  <Input
+                    id="business-legal-name"
+                    autoComplete="organization"
+                    value={form.legalName}
+                    onChange={(e) => update("legalName", e.target.value)}
+                    minLength={3}
+                    maxLength={200}
+                    autoFocus
+                    required
+                  />
+                </Field>
+                <Field id="business-trade-name" label="Trade name">
+                  <Input
+                    id="business-trade-name"
+                    value={form.tradeName}
+                    onChange={(e) => update("tradeName", e.target.value)}
+                  />
+                </Field>
+                <Field id="business-tin" label="TIN *">
+                  <Input
+                    id="business-tin"
+                    value={form.tin}
+                    onChange={(e) =>
+                      update(
+                        "tin",
+                        e.target.value.replace(/\D/g, "").slice(0, 10),
+                      )
+                    }
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    minLength={10}
+                    maxLength={10}
+                    required
+                  />
+                </Field>
+                <Field id="business-vat" label="VAT number">
+                  <Input
+                    id="business-vat"
+                    value={form.vatNumber}
+                    onChange={(e) => update("vatNumber", e.target.value)}
+                  />
+                </Field>
+                <Field id="business-email" label="Business email">
+                  <Input
+                    id="business-email"
+                    type="email"
+                    autoComplete="email"
+                    value={form.email}
+                    onChange={(e) => update("email", e.target.value)}
+                  />
+                </Field>
+                <Field id="business-phone" label="Business phone" span={2}>
+                  <Input
+                    id="business-phone"
+                    type="tel"
+                    autoComplete="tel"
+                    value={form.phone}
+                    onChange={(e) => update("phone", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </Card>
           )}
-        </div>
+
+          {step === "address" && (
+            <Card>
+              <p className="mb-3 text-xs text-muted-foreground">
+                You can update these details later in merchant settings.
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field id="address-region" label="Region">
+                  <Input
+                    id="address-region"
+                    autoComplete="address-level1"
+                    value={form.region}
+                    onChange={(e) => update("region", e.target.value)}
+                  />
+                </Field>
+                <Field id="address-zone" label="Zone">
+                  <Input
+                    id="address-zone"
+                    autoComplete="address-level2"
+                    value={form.zone}
+                    onChange={(e) => update("zone", e.target.value)}
+                  />
+                </Field>
+                <Field id="address-city" label="City">
+                  <Input
+                    id="address-city"
+                    autoComplete="address-level2"
+                    value={form.city}
+                    onChange={(e) => update("city", e.target.value)}
+                  />
+                </Field>
+                <Field id="address-wereda" label="Wereda">
+                  <Input
+                    id="address-wereda"
+                    value={form.wereda}
+                    onChange={(e) => update("wereda", e.target.value)}
+                  />
+                </Field>
+                <Field id="address-kebele" label="Kebele">
+                  <Input
+                    id="address-kebele"
+                    value={form.kebele}
+                    onChange={(e) => update("kebele", e.target.value)}
+                  />
+                </Field>
+                <Field id="address-house" label="House number">
+                  <Input
+                    id="address-house"
+                    autoComplete="address-line1"
+                    value={form.houseNumber}
+                    onChange={(e) => update("houseNumber", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {step === "branch" && (
+            <Card>
+              <div className="flex flex-col gap-4">
+                <Field id="branch-name" label="Branch name">
+                  <Input
+                    id="branch-name"
+                    value={form.branchName}
+                    onChange={(e) => update("branchName", e.target.value)}
+                    minLength={3}
+                    maxLength={120}
+                    placeholder="Main"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Additional branches can be added after sign-in.
+                  </p>
+                </Field>
+                <div
+                  className="flex flex-col gap-2"
+                  role="group"
+                  aria-labelledby="branch-location-label"
+                >
+                  <Label id="branch-location-label" className="text-sm">
+                    Location pin
+                  </Label>
+                  <BranchLocationPicker
+                    value={form.branchLocation}
+                    onChange={(next) => update("branchLocation", next)}
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {step === "owner" && (
+            <Card>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field id="owner-name" label="Full name" span={2}>
+                  <Input
+                    id="owner-name"
+                    autoComplete="name"
+                    value={form.ownerName}
+                    onChange={(e) => update("ownerName", e.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
+                <Field id="owner-email" label="Email address *" span={2}>
+                  <Input
+                    id="owner-email"
+                    type="email"
+                    autoComplete="email"
+                    value={form.ownerEmail}
+                    onChange={(e) => update("ownerEmail", e.target.value)}
+                    maxLength={254}
+                    required
+                    readOnly={Boolean(googleToken)}
+                  />
+                </Field>
+                {!googleToken && (
+                  <Field id="owner-password" label="Password *" span={2}>
+                    <Input
+                      id="owner-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.ownerPassword}
+                      onChange={(e) => update("ownerPassword", e.target.value)}
+                      minLength={8}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Use at least 8 characters.
+                    </p>
+                  </Field>
+                )}
+                {!googleToken && (
+                  <Field
+                    id="owner-password-confirm"
+                    label="Confirm password *"
+                    span={2}
+                  >
+                    <Input
+                      id="owner-password-confirm"
+                      type="password"
+                      autoComplete="new-password"
+                      value={form.ownerPasswordConfirm}
+                      onChange={(e) =>
+                        update("ownerPasswordConfirm", e.target.value)
+                      }
+                      minLength={8}
+                      required
+                    />
+                  </Field>
+                )}
+                <Field
+                  id="legal-document"
+                  label="Legal registration document *"
+                  span={2}
+                >
+                  <Input
+                    id="legal-document"
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png"
+                    required
+                    onChange={(e) =>
+                      update("legalDocument", e.target.files?.[0] ?? null)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    PDF, JPEG, or PNG. Maximum 5 MB. The document is stored
+                    privately for review.
+                  </p>
+                </Field>
+              </div>
+            </Card>
+          )}
+
+          {isLast && !googleToken && (
+            <TurnstileWidget
+              onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken(null)}
+            />
+          )}
+
+          {error && <ErrorCallout title={error.title} items={error.items} />}
+
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={goBack}
+              disabled={stepIdx === 0 || busy}
+            >
+              <ArrowLeft className="size-4" />
+              Back
+            </Button>
+            {isLast ? (
+              <Button
+                type="submit"
+                disabled={busy}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {busy ? "Creating account…" : "Create account"}
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                Continue
+                <ArrowRight className="size-4" />
+              </Button>
+            )}
+          </div>
+        </form>
 
         <p className="text-center text-xs text-muted-foreground">
-          Already onboarded?{" "}
+          Already have an account?{" "}
           <Link
             to="/login"
             className="font-medium text-primary underline-offset-2 hover:underline"
           >
             Sign in
           </Link>
-          .
+        </p>
+        <p className="border-t pt-5 text-center text-xs text-muted-foreground lg:hidden">
+          E-invoicing, quietly handled.
         </p>
       </div>
     </main>
@@ -599,9 +712,7 @@ function Stepper({
               aria-current={state === "current" ? "step" : undefined}
               className={cn(
                 "group flex items-center gap-2 rounded-md px-2 py-1 text-left transition-colors",
-                reachable
-                  ? "hover:bg-accent/50"
-                  : "cursor-default opacity-60",
+                reachable ? "hover:bg-accent/50" : "cursor-default opacity-60",
               )}
             >
               <span
@@ -614,11 +725,7 @@ function Stepper({
                     "border border-border bg-background text-muted-foreground",
                 )}
               >
-                {state === "done" ? (
-                  <CheckCircle2 className="size-4" />
-                ) : (
-                  i + 1
-                )}
+                {state === "done" ? <CheckCircle2 className="size-4" /> : i + 1}
               </span>
               <span
                 className={cn(
@@ -651,18 +758,48 @@ function Card({ children }: { children: React.ReactNode }) {
 }
 
 function Field({
+  id,
   label,
   children,
   span,
 }: {
+  id: string;
   label: string;
   children: React.ReactNode;
   span?: 1 | 2;
 }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", span === 2 && "col-span-2")}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+    <div className={cn("flex flex-col gap-1.5", span === 2 && "sm:col-span-2")}>
+      <Label htmlFor={id} className="text-sm">
+        {label}
+      </Label>
       {children}
     </div>
   );
+}
+
+/** The token is decoded only to prefill the UI. The API independently verifies
+ * its signature, expiry, purpose, Google subject, and email before creating an
+ * account, so these browser-visible claims are never trusted for authorization. */
+function readGoogleProfile(
+  token: string,
+): { email: string; name: string } | null {
+  try {
+    const segment = token.split(".")[1];
+    if (!segment) return null;
+    const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(padded)) as Record<string, unknown>;
+    if (
+      payload.purpose !== "google-merchant-enrollment" ||
+      typeof payload.email !== "string"
+    )
+      return null;
+    return {
+      email: payload.email,
+      name: typeof payload.name === "string" ? payload.name : "",
+    };
+  } catch {
+    return null;
+  }
 }

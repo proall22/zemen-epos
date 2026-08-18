@@ -3,14 +3,23 @@ import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ErrorCalloutProps {
+  id?: string;
   title: string;
   items?: string[];
   className?: string;
 }
 
-export function ErrorCallout({ title, items, className }: ErrorCalloutProps) {
+export function ErrorCallout({
+  id,
+  title,
+  items,
+  className,
+}: ErrorCalloutProps) {
   return (
     <div
+      id={id}
+      role="alert"
+      aria-live="polite"
       className={cn(
         "flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3",
         className,

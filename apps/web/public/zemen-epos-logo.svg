@@ -1,6 +1,8 @@
-<svg viewBox="0 0 135 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zemen-ePos">
-  <text x="0" y="24" font-family="'Noto Serif Display SemiCondensed', 'Noto Serif Display', 'Times New Roman', serif" letter-spacing="-0.3px">
-    <tspan fill="#5700FF" font-size="42" font-weight="900">Z</tspan>
-    <tspan fill="#111827" font-size="23" font-weight="700">emen-ePos</tspan>
-  </text>
+<svg viewBox="0 0 190 40" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Zemen ePOS">
+  <rect width="40" height="40" rx="10" fill="#5700FF"/>
+  <path d="M10.5 10.5h20v5.1L18.2 27h12.3v4.5h-21v-5.1l12.4-11.3H10.5v-4.6Z" fill="#fff"/>
+  <path d="M27.5 8.5h4v4h-4z" fill="#BDA7FF"/>
+  <text x="51" y="24.5" fill="#111827" font-family="Inter,Arial,sans-serif" font-size="21" font-weight="700" letter-spacing="-.65">Zemen</text>
+  <text x="116" y="24.5" fill="#5700FF" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700" letter-spacing="-.35">ePOS</text>
+  <text x="52" y="35" fill="#6B7280" font-family="Inter,Arial,sans-serif" font-size="6.2" font-weight="700" letter-spacing="1.45">BUSINESS SYSTEMS</text>
 </svg>

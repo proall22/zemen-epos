@@ -33,7 +33,9 @@ export class TurnstileGuard implements CanActivate {
     const token =
       typeof body?.turnstileToken === 'string'
         ? body.turnstileToken
-        : undefined;
+        : typeof req.headers['x-turnstile-token'] === 'string'
+          ? req.headers['x-turnstile-token']
+          : undefined;
     const result = await this.turnstile.verify(token, req.ip);
     this.context.setChallenge({
       provided: Boolean(token),

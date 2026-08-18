@@ -39,8 +39,7 @@ function makeService(opts: {
     recordInbound: jest.fn().mockResolvedValue(undefined),
   } as unknown as AuditService;
   const context = {
-    get: () =>
-      ({ requestId: 'r', ip: '1.2.3.4' }) as RequestContext,
+    get: () => ({ requestId: 'r', ip: '1.2.3.4' }) as RequestContext,
   } as unknown as RequestContextService;
   // Refresh-token issuance is exercised on the success path; the rest of
   // the tests don't care about its internals, so we return a fixed pair.
@@ -57,7 +56,26 @@ function makeService(opts: {
   const prisma = {
     user: { update: jest.fn().mockResolvedValue(undefined) },
   } as never;
-  return new AuthService(users, jwt, audit, context, refreshTokens, prisma);
+  const otp = {
+    pendingToken: jest.fn().mockReturnValue('PENDING'),
+    sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+  } as never;
+  const transactionalEmail = { notify: jest.fn() } as never;
+  const verificationConfig = {
+    failedLoginAlertThreshold: 5,
+    accessTokenTtlSeconds: 3600,
+  } as never;
+  return new AuthService(
+    users,
+    jwt,
+    audit,
+    context,
+    refreshTokens,
+    prisma,
+    otp,
+    transactionalEmail,
+    verificationConfig,
+  );
 }
 
 describe('AuthService.login', () => {
@@ -87,9 +105,9 @@ describe('AuthService.login', () => {
     const verifyPassword = jest.fn().mockResolvedValue(true);
     const svc = makeService({ findByEmail, verifyPassword });
 
-    await expect(
-      svc.login({ email: 'a@b', password: 'pw' }),
-    ).rejects.toThrow(HttpException);
+    await expect(svc.login({ email: 'a@b', password: 'pw' })).rejects.toThrow(
+      HttpException,
+    );
   });
 
   it('rejects disabled accounts with a Forbidden message (after bcrypt timing)', async () => {
@@ -104,9 +122,9 @@ describe('AuthService.login', () => {
       findByEmail,
       verifyPassword: jest.fn().mockResolvedValue(true),
     });
-    await expect(
-      svc.login({ email: 'a@b', password: 'pw' }),
-    ).rejects.toThrow(ForbiddenException);
+    await expect(svc.login({ email: 'a@b', password: 'pw' })).rejects.toThrow(
+      ForbiddenException,
+    );
   });
 
   it('on wrong password: bumps failed-login counter then returns the generic message', async () => {
@@ -123,14 +141,10 @@ describe('AuthService.login', () => {
       verifyPassword: jest.fn().mockResolvedValue(false),
       recordFailedLogin,
     });
-    await expect(
-      svc.login({ email: 'a@b', password: 'pw' }),
-    ).rejects.toThrow(UnauthorizedException);
-    expect(recordFailedLogin).toHaveBeenCalledWith(
-      'u1',
-      5,
-      expect.any(Number),
+    await expect(svc.login({ email: 'a@b', password: 'pw' })).rejects.toThrow(
+      UnauthorizedException,
     );
+    expect(recordFailedLogin).toHaveBeenCalledWith('u1', 5, expect.any(Number));
   });
 
   it('on success: signs JWT, returns the LoginResponse envelope, and resets the failure state', async () => {
@@ -144,6 +158,8 @@ describe('AuthService.login', () => {
       lockedUntil: null,
       merchantId: 'm1',
       branchId: null,
+      phone: null,
+      emailVerifiedAt: new Date(),
     });
     const recordLogin = jest.fn().mockResolvedValue({});
     const svc = makeService({
@@ -152,9 +168,12 @@ describe('AuthService.login', () => {
       recordLogin,
     });
     const result = await svc.login({ email: 'a@b', password: 'pw' });
-    expect(result.token).toBe('TOKEN');
-    expect(result.refreshToken).toBe('REFRESH');
-    expect(result.user.merchantId).toBe('m1');
-    expect(recordLogin).toHaveBeenCalledWith('u1');
+    expect(result).toEqual({
+      step: 'two-factor',
+      pendingToken: 'PENDING',
+      email: 'a***@b',
+      phone: null,
+    });
+    expect(recordLogin).not.toHaveBeenCalled();
   });
 });

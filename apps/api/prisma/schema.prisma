@@ -22,6 +22,18 @@ enum UserRole {
   SUPPORT
 }
 
+enum AuthChallengeType {
+  EMAIL_VERIFICATION
+  LOGIN_EMAIL
+  LOGIN_PHONE
+}
+
+enum LegalDocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 /// Tenant root. Every operational row belongs to exactly one Merchant.
 /// SUPER_ADMIN (back-office) users have no merchant — they're cross-tenant.
 model Merchant {
@@ -79,6 +91,7 @@ model Merchant {
   scheduledReports ScheduledReport[]
   scheduledReportRuns ScheduledReportRun[]
   invoiceCancellations InvoiceCancellation[]
+  legalDocuments MerchantLegalDocument[]
 
   @@map("merchants")
 }
@@ -222,6 +235,10 @@ model User {
   // without rotating the password).
   failedLoginCount Int       @default(0)
   lockedUntil      DateTime?
+  emailVerifiedAt  DateTime?
+  googleSubject    String?   @unique
+  phone             String?
+  phoneVerifiedAt   DateTime?
   language         String    @default("en")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -240,11 +257,59 @@ model User {
 
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  authChallenges      AuthChallenge[]
+  legalDocuments      MerchantLegalDocument[] @relation("LegalDocumentApplicant")
+  reviewedLegalDocuments MerchantLegalDocument[] @relation("LegalDocumentReviewer")
   branchAccess        UserBranch[]
   // Consent grants this user requested as a SUPER_ADMIN (cross-tenant access).
   consentRequests     ConsentGrant[] @relation("ConsentRequester")
 
   @@map("users")
+}
+
+/// Private compliance evidence supplied during merchant registration. The
+/// bytes live outside the public web root; only this opaque storage key is
+/// persisted. Original names are retained only after basename sanitisation.
+model MerchantLegalDocument {
+  id           String   @id @default(cuid())
+  merchantId   String
+  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation("LegalDocumentApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  storageKey   String   @unique
+  originalName String
+  mediaType    String
+  sizeBytes    Int
+  sha256       String
+  status       LegalDocumentStatus @default(PENDING)
+  reviewedBy   String?
+  reviewer     User?    @relation("LegalDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  rejectionReason String?
+  createdAt    DateTime @default(now())
+
+  @@index([merchantId])
+  @@index([userId])
+  @@index([status, createdAt])
+  @@map("merchant_legal_documents")
+}
+
+/// Single-purpose OTP challenge. OTPs are bcrypt-hashed, single-use, expire,
+/// and are scoped to one user and one authentication transition.
+model AuthChallenge {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        AuthChallengeType
+  otpHash     String
+  attempts    Int               @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, type, consumedAt, createdAt])
+  @@index([expiresAt])
+  @@map("auth_challenges")
 }
 
 /// Branch access grant. BRANCH_ADMIN and other branch-scoped users with rows

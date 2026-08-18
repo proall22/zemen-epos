@@ -13,12 +13,7 @@ import {
 import { UserFormSheet } from "@/components/user-form-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -28,7 +23,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
-import { listBranches, listUsers, unlockUser, updateUser } from "@/lib/resources";
+import { readRequestError } from "@/lib/api-errors";
+import {
+  listBranches,
+  listUsers,
+  unlockUser,
+  updateUser,
+} from "@/lib/resources";
 import { ROLE_LABELS, type ManagedUser, type SafeBranch } from "@/lib/types";
 
 /** Pure helper: is the user currently locked out? */
@@ -67,7 +68,7 @@ export function UsersPage() {
     try {
       setUsers(await listUsers());
     } catch (e) {
-      setError((e as Error).message);
+      setError(readRequestError(e, "Unable to load user information."));
     } finally {
       setLoading(false);
     }
@@ -151,9 +152,7 @@ export function UsersPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
@@ -177,9 +176,7 @@ export function UsersPage() {
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.name ?? "—"}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant={isSuperAdmin ? "default" : "secondary"}
-                        >
+                        <Badge variant={isSuperAdmin ? "default" : "secondary"}>
                           {ROLE_LABELS[u.role]}
                         </Badge>
                       </TableCell>

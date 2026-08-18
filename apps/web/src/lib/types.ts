@@ -99,6 +99,7 @@ export interface Merchant {
 export interface MerchantOwner {
   name: string | null;
   email: string;
+  emailVerifiedAt: string | null;
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
@@ -309,6 +310,14 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export interface PendingAuthResponse {
+  step: "email-verification" | "two-factor";
+  pendingToken: string;
+  email: string;
+  phone: string | null;
+  deliveryFailed?: boolean;
+}
+
 /** Branch shape inside MeContext — same as SafeBranch but with the *Set
  *  credential booleans removed (the caller doesn't need credential status to
  *  render their own receipt; that's a Phase D onboarding concern). */
@@ -401,7 +410,11 @@ export interface SystemSummary {
     rejected: number;
     suspended: number;
   };
-  tenants: { totalBranches: number; activeBranches: number; activeUsers: number };
+  tenants: {
+    totalBranches: number;
+    activeBranches: number;
+    activeUsers: number;
+  };
   documents: {
     invoicesToday: number;
     invoicesThisMonth: number;
@@ -414,6 +427,13 @@ export interface SystemSummary {
     pendingInvoices: number;
     cancelledInvoices: number;
   };
+  registrationReviews: {
+    pending: number;
+    emailVerified: number;
+    emailNotVerified: number;
+    approved: number;
+    rejected: number;
+  };
   pendingMerchantList: Array<{
     id: string;
     legalName: string;
@@ -422,7 +442,12 @@ export interface SystemSummary {
     createdAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
-    mainBranch: { id: string; name: string; city: string | null; region: string | null } | null;
+    mainBranch: {
+      id: string;
+      name: string;
+      city: string | null;
+      region: string | null;
+    } | null;
   }>;
   recentAuditLogs: Array<{
     id: string;
@@ -439,14 +464,64 @@ export interface SystemSummary {
   }>;
 }
 
+export type LegalDocumentStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface RegistrationReview {
+  merchantId: string;
+  merchantName: string;
+  tin: string;
+  phone: string | null;
+  registeredAt: string;
+  applicant: {
+    id: string;
+    name: string | null;
+    email: string;
+    emailVerifiedAt: string | null;
+    phone: string | null;
+    phoneVerifiedAt: string | null;
+  };
+  document: {
+    id: string;
+    originalName: string;
+    mediaType: string;
+    sizeBytes: number;
+    status: LegalDocumentStatus;
+    uploadedAt: string;
+    reviewedBy: string | null;
+    reviewer: { name: string | null; email: string } | null;
+    reviewedAt: string | null;
+    rejectionReason: string | null;
+  };
+}
+
 export interface SystemHealthSummary {
-  status: 'ok' | 'degraded';
+  status: "ok" | "degraded";
   checks: {
-    db: { status: 'ok' | 'down' | 'skipped'; message?: string; latencyMs?: number };
-    redis: { status: 'ok' | 'down' | 'skipped'; message?: string; latencyMs?: number };
-    vault: { status: 'ok' | 'down' | 'skipped'; message?: string; latencyMs?: number };
-    eirms: { status: 'ok' | 'down' | 'skipped'; message?: string; latencyMs?: number };
-    queueWorker: { status: 'ok' | 'down' | 'skipped'; message?: string; latencyMs?: number };
+    db: {
+      status: "ok" | "down" | "skipped";
+      message?: string;
+      latencyMs?: number;
+    };
+    redis: {
+      status: "ok" | "down" | "skipped";
+      message?: string;
+      latencyMs?: number;
+    };
+    vault: {
+      status: "ok" | "down" | "skipped";
+      message?: string;
+      latencyMs?: number;
+    };
+    eirms: {
+      status: "ok" | "down" | "skipped";
+      message?: string;
+      latencyMs?: number;
+    };
+    queueWorker: {
+      status: "ok" | "down" | "skipped";
+      message?: string;
+      latencyMs?: number;
+    };
   };
   queue: {
     pending: number;

@@ -52,6 +52,7 @@ async function main(): Promise<void> {
         lockedUntil: null,
         merchantId: null,
         branchId: null,
+        emailVerifiedAt: new Date(),
       },
       update: {
         passwordHash,
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
         lockedUntil: null,
         merchantId: null,
         branchId: null,
+        emailVerifiedAt: new Date(),
       },
       select: { id: true, email: true, role: true, active: true },
     });

@@ -3,12 +3,7 @@ import { useEffect, useState } from "react";
 import { AuditDetailSheet } from "@/components/audit-detail-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -27,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
+import { readRequestError } from "@/lib/api-errors";
 import { listAuditLogs, type AuditQuery } from "@/lib/resources";
 import type { AuditDirection, AuditLog } from "@/lib/types";
 
@@ -63,7 +59,11 @@ export function AuditPage() {
         setItems(page.items);
         setTotal(page.total);
       })
-      .catch((e: Error) => !cancelled && setError(e.message))
+      .catch(
+        (e: unknown) =>
+          !cancelled &&
+          setError(readRequestError(e, "Unable to load audit activity.")),
+      )
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -91,14 +91,16 @@ export function AuditPage() {
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">Audit log</h1>
         <p className="text-sm text-muted-foreground">
-          Every internal action (INBOUND) and EIRMS exchange (OUTBOUND), with who
-          triggered it. Click a row for the full detail.
+          Every internal action (INBOUND) and EIRMS exchange (OUTBOUND), with
+          who triggered it. Click a row for the full detail.
         </p>
       </header>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <CardTitle>{total} event{total === 1 ? "" : "s"}</CardTitle>
+          <CardTitle>
+            {total} event{total === 1 ? "" : "s"}
+          </CardTitle>
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -168,9 +170,7 @@ export function AuditPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : items.length === 0 ? (

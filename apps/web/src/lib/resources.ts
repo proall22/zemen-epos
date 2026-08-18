@@ -14,11 +14,14 @@ import type {
   InventoryPage,
   ItemStockRow,
   LoginResponse,
+  PendingAuthResponse,
   ManagedUser,
   MeContext,
   Merchant,
   MerchantExport,
   Receipt,
+  RegistrationReview,
+  LegalDocumentStatus,
   SafeBranch,
   StatusReport,
   ConsentDecision,
@@ -42,8 +45,8 @@ export function loginRequest(
   email: string,
   password: string,
   turnstileToken?: string,
-): Promise<LoginResponse> {
-  return api<LoginResponse>("/auth/login", {
+): Promise<PendingAuthResponse> {
+  return api<PendingAuthResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password, turnstileToken }),
   });
@@ -205,6 +208,41 @@ export function getSystemHealthSummary(): Promise<SystemHealthSummary> {
   return api<SystemHealthSummary>("/dashboard/system/health");
 }
 
+export function listRegistrationReviews(
+  status?: LegalDocumentStatus,
+): Promise<RegistrationReview[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return api<RegistrationReview[]>(`/platform/registrations${query}`);
+}
+
+export function getRegistrationStatus(
+  merchantId: string,
+): Promise<RegistrationReview> {
+  return api<RegistrationReview>(
+    `/merchants/${encodeURIComponent(merchantId)}/registration-status`,
+  );
+}
+
+export function openRegistrationDocument(
+  merchantId: string,
+): Promise<{ blob: Blob; filename: string | null }> {
+  return apiBlob(
+    `/platform/registrations/${encodeURIComponent(merchantId)}/document`,
+  );
+}
+
+export function replaceRegistrationDocument(
+  merchantId: string,
+  document: File,
+): Promise<RegistrationReview> {
+  const form = new FormData();
+  form.append("legalDocument", document);
+  return api<RegistrationReview>(
+    `/merchants/${encodeURIComponent(merchantId)}/registration-document`,
+    { method: "POST", body: form },
+  );
+}
+
 export function getCashierSummary(opts?: {
   scope?: "branch" | "merchant";
 }): Promise<CashierSummary> {
@@ -315,10 +353,12 @@ export interface EmailDomainRow {
   bounceRate: number;
 }
 
-export function listEmailEvents(query: {
-  domain?: string;
-  status?: string;
-} = {}): Promise<EmailEventRow[]> {
+export function listEmailEvents(
+  query: {
+    domain?: string;
+    status?: string;
+  } = {},
+): Promise<EmailEventRow[]> {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
     if (v) params.set(k, v);
@@ -402,7 +442,10 @@ export function listBuyers(): Promise<Buyer[]> {
   return api<Buyer[]>("/buyers");
 }
 
-export function listInventory(q?: string, categoryId?: string): Promise<InventoryItem[]> {
+export function listInventory(
+  q?: string,
+  categoryId?: string,
+): Promise<InventoryItem[]> {
   const params = new URLSearchParams();
   if (q?.trim()) params.set("q", q.trim());
   if (categoryId) params.set("categoryId", categoryId);
@@ -411,8 +454,16 @@ export function listInventory(q?: string, categoryId?: string): Promise<Inventor
   return api<InventoryItem[]>(path);
 }
 
-export function listInventoryPage(page: number, pageSize: number, q?: string, categoryId?: string): Promise<InventoryPage> {
-  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+export function listInventoryPage(
+  page: number,
+  pageSize: number,
+  q?: string,
+  categoryId?: string,
+): Promise<InventoryPage> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
   if (q?.trim()) params.set("q", q.trim());
   if (categoryId) params.set("categoryId", categoryId);
   return api<InventoryPage>(`/inventory/page?${params}`);
@@ -580,7 +631,10 @@ export function createStore(input: CreateStoreInput): Promise<Store> {
 
 export type UpdateStoreInput = Partial<Omit<CreateStoreInput, "branchId">>;
 
-export function updateStore(id: string, input: UpdateStoreInput): Promise<Store> {
+export function updateStore(
+  id: string,
+  input: UpdateStoreInput,
+): Promise<Store> {
   return api<Store>(`/stores/${id}`, {
     method: "PATCH",
     body: JSON.stringify(input),
@@ -743,7 +797,9 @@ export function deleteVendor(id: string): Promise<Vendor> {
 export function listPurchases(opts?: {
   vendorId?: string;
 }): Promise<StockPurchase[]> {
-  const q = opts?.vendorId ? `?vendorId=${encodeURIComponent(opts.vendorId)}` : "";
+  const q = opts?.vendorId
+    ? `?vendorId=${encodeURIComponent(opts.vendorId)}`
+    : "";
   return api<StockPurchase[]>(`/purchases${q}`);
 }
 
@@ -1128,10 +1184,7 @@ export function updateMerchant(
 
 /** Phase I — back-office reject action for a pending merchant. Optional
  *  short reason is included in the rejection email. */
-export function rejectMerchant(
-  id: string,
-  reason?: string,
-): Promise<Merchant> {
+export function rejectMerchant(id: string, reason?: string): Promise<Merchant> {
   return api<Merchant>(`/merchants/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
@@ -1171,7 +1224,7 @@ export function testBranchEirmsConnection(
 ): Promise<EirmsConnectionTest> {
   return api<EirmsConnectionTest>(
     `/merchants/${merchantId}/branches/${branchId}/eirms/test`,
-    { method: 'POST' },
+    { method: "POST" },
   );
 }
 
@@ -1208,19 +1261,36 @@ export function createBranch(
   });
 }
 
-export function approveBranch(merchantId: string, branchId: string): Promise<SafeBranch> {
-  return api<SafeBranch>(`/merchants/${merchantId}/branches/${branchId}/approve`, { method: "POST" });
+export function approveBranch(
+  merchantId: string,
+  branchId: string,
+): Promise<SafeBranch> {
+  return api<SafeBranch>(
+    `/merchants/${merchantId}/branches/${branchId}/approve`,
+    { method: "POST" },
+  );
 }
 
-export function listPendingBranchReviews(): Promise<import("./types").PendingBranchReview[]> {
-  return api<import("./types").PendingBranchReview[]>("/platform/branch-approvals");
+export function listPendingBranchReviews(): Promise<
+  import("./types").PendingBranchReview[]
+> {
+  return api<import("./types").PendingBranchReview[]>(
+    "/platform/branch-approvals",
+  );
 }
 
-export function rejectBranch(merchantId: string, branchId: string, reason?: string): Promise<SafeBranch> {
-  return api<SafeBranch>(`/merchants/${merchantId}/branches/${branchId}/reject`, {
-    method: "POST",
-    body: JSON.stringify(reason ? { reason } : {}),
-  });
+export function rejectBranch(
+  merchantId: string,
+  branchId: string,
+  reason?: string,
+): Promise<SafeBranch> {
+  return api<SafeBranch>(
+    `/merchants/${merchantId}/branches/${branchId}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    },
+  );
 }
 
 export function updateBranch(
@@ -1354,14 +1424,84 @@ export interface SignupMerchantInput {
   branch?: { name?: string; latitude?: number; longitude?: number };
   owner: { email: string; password: string; name?: string };
   turnstileToken?: string;
+  legalDocument: File;
 }
 
 export function signupMerchant(
   input: SignupMerchantInput,
-): Promise<LoginResponse> {
-  return api<LoginResponse>("/signup/merchant", {
+): Promise<PendingAuthResponse> {
+  const { legalDocument, turnstileToken, ...payload } = input;
+  const form = new FormData();
+  form.set("payload", JSON.stringify(payload));
+  form.set("legalDocument", legalDocument);
+  return api<PendingAuthResponse>("/signup/merchant", {
     method: "POST",
-    body: JSON.stringify(input),
+    headers: turnstileToken ? { "X-Turnstile-Token": turnstileToken } : {},
+    body: form,
+  });
+}
+
+export function signupMerchantWithGoogle(
+  input: Omit<SignupMerchantInput, "owner" | "turnstileToken"> & {
+    googleToken: string;
+  },
+): Promise<LoginResponse> {
+  const { legalDocument, googleToken, ...details } = input;
+  const form = new FormData();
+  form.set("payload", JSON.stringify({ ...details, googleToken }));
+  form.set("legalDocument", legalDocument);
+  return api<LoginResponse>("/signup/google/merchant", {
+    method: "POST",
+    body: form,
+  });
+}
+
+export function resendEmailVerification(
+  pendingToken: string,
+): Promise<{ ok: true }> {
+  return api("/auth/email-verification/resend", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken }),
+  });
+}
+
+export function verifyEmail(
+  pendingToken: string,
+  otp: string,
+): Promise<LoginResponse> {
+  return api("/auth/email-verification/verify", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, otp }),
+  });
+}
+
+export function getTwoFactorOptions(
+  pendingToken: string,
+): Promise<{ email: string; phone: string | null; phoneAvailable: boolean }> {
+  return api("/auth/2fa/options", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken }),
+  });
+}
+
+export function sendTwoFactor(
+  pendingToken: string,
+  method: "email" | "phone",
+): Promise<{ ok: true }> {
+  return api("/auth/2fa/send", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, method }),
+  });
+}
+
+export function verifyTwoFactor(
+  pendingToken: string,
+  method: "email" | "phone",
+  otp: string,
+): Promise<LoginResponse> {
+  return api("/auth/2fa/verify", {
+    method: "POST",
+    body: JSON.stringify({ pendingToken, method, otp }),
   });
 }
 

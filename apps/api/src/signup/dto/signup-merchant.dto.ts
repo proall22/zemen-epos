@@ -46,7 +46,9 @@ export class SignupMerchantInfoDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
-  @Matches(/^\+?[0-9][0-9 ()-]{6,28}$/, { message: 'Phone number format is invalid.' })
+  @Matches(/^\+?[0-9][0-9 ()-]{6,28}$/, {
+    message: 'Phone number format is invalid.',
+  })
   phone?: string;
 
   @ApiPropertyOptional()

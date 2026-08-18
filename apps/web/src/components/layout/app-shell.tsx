@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
@@ -25,6 +25,13 @@ export function AppShell() {
   const { can, merchant, user, consentSession, branch } = useAuth();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const sidebarRole = user?.role === "ADMIN" ? "BRANCH_ADMIN" : user?.role;
+  const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktop, setDesktop] = useState(() =>
+    typeof window === "undefined"
+      ? true
+      : window.matchMedia("(min-width: 768px)").matches,
+  );
 
   // ── Collapsible sidebar state ───────────────────────────────────────────
   const [collapsed, setCollapsed] = useState(() => {
@@ -47,6 +54,18 @@ export function AppShell() {
     });
   }
 
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const update = () => setDesktop(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => setMobileOpen(false), [location.pathname]);
+
+  const navCollapsed = desktop && collapsed;
+
   // ── Visible nav groups ──────────────────────────────────────────────────
   const visibleGroups = NAV_SECTIONS.map((sectionKey) => ({
     sectionKey,
@@ -56,7 +75,8 @@ export function AppShell() {
           ? (r.superAdminSectionKey ?? r.sectionKey) === sectionKey &&
             !r.hideForPlatformAdmin
           : r.sectionKey === sectionKey) &&
-        (!r.sidebarRoles || (!!sidebarRole && r.sidebarRoles.includes(sidebarRole))) &&
+        (!r.sidebarRoles ||
+          (!!sidebarRole && r.sidebarRoles.includes(sidebarRole))) &&
         routeAllows(r, can),
     ),
   })).filter((g) => g.items.length > 0);
@@ -70,18 +90,27 @@ export function AppShell() {
 
   return (
     <div className="flex h-svh bg-background text-foreground print:block print:h-auto print:bg-white">
+      {mobileOpen && (
+        <button
+          type="button"
+          className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-[1px] md:hidden"
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
       {/* ── Sidebar ───────────────────────────────────────────────────── */}
       <aside
         className={cn(
-          "group/sidebar relative flex shrink-0 flex-col border-r border-border/60 bg-card transition-[width] duration-200 ease-out print:hidden",
-          collapsed ? "w-[68px]" : "w-[280px]",
+          "group/sidebar fixed inset-y-0 left-0 z-40 flex w-[280px] shrink-0 flex-col border-r border-border/60 bg-card transition-[width,transform] duration-200 ease-out md:relative md:z-auto print:hidden",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          navCollapsed ? "md:w-[68px]" : "md:w-[280px]",
         )}
       >
         {/* Brand */}
-        <Brand collapsed={collapsed} onToggle={toggleSidebar} />
+        <Brand collapsed={navCollapsed} onToggle={toggleSidebar} />
 
         {/* Branch switcher — hidden in icon-only mode */}
-        {!collapsed && <BranchSwitcherCard />}
+        {!navCollapsed && <BranchSwitcherCard />}
 
         {/* Navigation */}
         <nav
@@ -91,7 +120,7 @@ export function AppShell() {
           {visibleGroups.map((group) => (
             <div key={group.sectionKey} className="mb-4 flex flex-col gap-0.5">
               {/* Section label — hide when collapsed */}
-              {!collapsed && (
+              {!navCollapsed && (
                 <span className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
                   {t(group.sectionKey)}
                 </span>
@@ -102,18 +131,20 @@ export function AppShell() {
                   to={item.to}
                   end={item.end}
                   title={
-                    collapsed
+                    navCollapsed
                       ? t(
-                        isSuperAdmin && item.superAdminLabelKey
-                          ? item.superAdminLabelKey
-                          : item.labelKey,
-                      )
+                          isSuperAdmin && item.superAdminLabelKey
+                            ? item.superAdminLabelKey
+                            : item.labelKey,
+                        )
                       : undefined
                   }
                   className={({ isActive }) =>
                     cn(
                       "group flex items-center gap-3 rounded-[10px] transition-all duration-150",
-                      collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
+                      navCollapsed
+                        ? "justify-center px-0 py-2.5"
+                        : "px-3 py-2.5",
                       isActive
                         ? "bg-[var(--sidebar-active)] text-primary font-medium"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -125,11 +156,13 @@ export function AppShell() {
                       <item.icon
                         className={cn(
                           "size-[18px] shrink-0 transition-colors",
-                          isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
-                          collapsed && "mx-auto",
+                          isActive
+                            ? "text-primary"
+                            : "text-muted-foreground group-hover:text-foreground",
+                          navCollapsed && "mx-auto",
                         )}
                       />
-                      {!collapsed && (
+                      {!navCollapsed && (
                         <span className="text-[13.5px] leading-none">
                           {t(
                             isSuperAdmin && item.superAdminLabelKey
@@ -139,7 +172,7 @@ export function AppShell() {
                         </span>
                       )}
                       {/* Active indicator bar */}
-                      {isActive && !collapsed && (
+                      {isActive && !navCollapsed && (
                         <span className="ml-auto h-4 w-[3px] rounded-full bg-primary opacity-70" />
                       )}
                     </>
@@ -151,7 +184,7 @@ export function AppShell() {
         </nav>
 
         {/* Footer */}
-        <Footer collapsed={collapsed} />
+        <Footer collapsed={navCollapsed} />
 
         {/* Collapse toggle — floating button at bottom of sidebar */}
         <button
@@ -160,7 +193,7 @@ export function AppShell() {
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
-            "absolute -right-3 top-20 z-30 flex size-6 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-card transition-all duration-200 hover:bg-muted hover:text-foreground",
+            "absolute -right-3 top-20 z-30 hidden size-6 items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-card transition-all duration-200 hover:bg-muted hover:text-foreground md:flex",
           )}
         >
           <ChevronLeft
@@ -174,6 +207,18 @@ export function AppShell() {
 
       {/* ── Main content area ─────────────────────────────────────────── */}
       <main className="flex flex-1 min-w-0 flex-col overflow-auto bg-background print:overflow-visible print:bg-white">
+        <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 bg-card px-4 md:hidden print:hidden">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Open navigation"
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu className="size-5" />
+          </Button>
+          <ZemenEPosLogo className="h-7 w-auto text-foreground" />
+        </div>
         {consentSession && <ConsentBanner />}
         {rejected && (
           <div className="flex items-start gap-3 border-b border-destructive/20 bg-[#FEF2F2] px-6 py-3 print:hidden">
@@ -185,8 +230,8 @@ export function AppShell() {
               <p className="text-xs text-destructive/80">
                 {merchant?.rejectionReason
                   ? t("appShell.rejectedBodyWithReason", {
-                    reason: merchant.rejectionReason,
-                  })
+                      reason: merchant.rejectionReason,
+                    })
                   : t("appShell.rejectedBodyNoReason")}
               </p>
             </div>
@@ -240,24 +285,12 @@ function Brand({
           type="button"
           onClick={onToggle}
           aria-label="Expand sidebar"
-          className="flex size-9 items-center justify-center rounded-[10px] text-foreground hover:bg-muted transition-colors"
+          className="flex size-10 items-center justify-center rounded-[10px] text-foreground transition-colors hover:bg-muted"
         >
-          <Menu className="size-5" />
+          <ZemenEPosLogo markOnly className="size-8" />
         </button>
       ) : (
-        <>
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primary text-primary-foreground shadow-sm">
-            <ZemenEPosLogo className="h-4 w-auto" />
-          </div>
-          <div className="flex min-w-0 flex-col leading-none">
-            <span className="text-[14px] font-semibold tracking-tight text-foreground">
-              Zemen-ePos
-            </span>
-            <span className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              MOR · EIRMS
-            </span>
-          </div>
-        </>
+        <ZemenEPosLogo className="h-9 w-auto text-foreground" />
       )}
     </div>
   );
@@ -291,8 +324,7 @@ function ConsentBanner() {
   const mm = Math.floor((totalSeconds % 3600) / 60);
   const ss = totalSeconds % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
-  const countdown =
-    hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`;
+  const countdown = hh > 0 ? `${hh}:${pad(mm)}:${pad(ss)}` : `${mm}:${pad(ss)}`;
 
   return (
     <div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-primary/20 bg-[#EEF2FF] px-6 py-2.5 print:hidden">
@@ -343,25 +375,25 @@ function Footer({ collapsed }: { collapsed: boolean }) {
     enabledLanguages.length > 0
       ? enabledLanguages
       : [
-        {
-          code: "en",
-          name: "English",
-          nativeName: "EN",
-          active: true,
-          ordering: 10,
-          createdAt: "",
-          updatedAt: "",
-        },
-        {
-          code: "am",
-          name: "Amharic",
-          nativeName: "አማ",
-          active: true,
-          ordering: 20,
-          createdAt: "",
-          updatedAt: "",
-        },
-      ];
+          {
+            code: "en",
+            name: "English",
+            nativeName: "EN",
+            active: true,
+            ordering: 10,
+            createdAt: "",
+            updatedAt: "",
+          },
+          {
+            code: "am",
+            name: "Amharic",
+            nativeName: "አማ",
+            active: true,
+            ordering: 20,
+            createdAt: "",
+            updatedAt: "",
+          },
+        ];
 
   const display =
     user?.name?.trim() || user?.email?.split("@")[0] || t("common.signedIn");

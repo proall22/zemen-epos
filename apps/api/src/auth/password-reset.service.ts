@@ -1,17 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
 import { RequestContextService } from '../audit/request-context.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefreshTokensService } from './refresh-tokens.service';
+import { AuthMailService } from './auth-mail.service';
 
 const RESET_TOKEN_BYTES = 32;
 const RESET_TTL_MS = 30 * 60 * 1000;
@@ -27,9 +23,9 @@ export class PasswordResetService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly context: RequestContextService,
-    private readonly notifications: NotificationsService,
     private readonly refreshTokens: RefreshTokensService,
     private readonly audit: AuditService,
+    private readonly authMail: AuthMailService,
   ) {}
 
   /** Always returns silently — never reveals whether the email matched a user.
@@ -74,10 +70,12 @@ export class PasswordResetService {
       },
     });
 
-    await this.notifications.enqueue({
-      action: 'auth.password-reset',
-      userId: user.id,
-      rawToken,
+    // Authentication mail uses the configured Gmail SMTP transport. Preserve
+    // the generic HTTP response even when the provider is unavailable.
+    await this.authMail.sendPasswordReset(normalised, rawToken).catch((err) => {
+      this.logger.warn(
+        `Password-reset SMTP delivery failed: ${(err as Error).message}`,
+      );
     });
 
     await this.audit
@@ -149,7 +147,11 @@ export class PasswordResetService {
   }
 
   private failureReason(
-    row: { expiresAt: Date; usedAt: Date | null; user: { active: boolean } } | null,
+    row: {
+      expiresAt: Date;
+      usedAt: Date | null;
+      user: { active: boolean };
+    } | null,
   ): string | null {
     if (!row) return 'unknown_token';
     if (row.usedAt) return 'already_used';
