@@ -4,6 +4,7 @@ import {
   Get,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -22,6 +23,7 @@ import type {
   AuthUser,
   JwtPayload,
   LoginResponse,
+  PendingAuthResponse,
 } from './auth.types';
 import { CurrentUser } from './current-user.decorator';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -30,6 +32,14 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { PasswordResetService } from './password-reset.service';
 import { Public } from './public.decorator';
+import {
+  PendingTokenDto,
+  SendTwoFactorDto,
+  VerifyOtpDto,
+  VerifyTwoFactorDto,
+} from './dto/otp.dto';
+import { OtpService } from './otp.service';
+import { GoogleOAuthService } from './google-oauth.service';
 import {
   REFRESH_COOKIE_NAME,
   commitSession,
@@ -71,7 +81,60 @@ export class AuthController {
     private readonly prisma: PrismaService,
     private readonly passwordReset: PasswordResetService,
     private readonly vault: VaultService,
+    private readonly otp: OtpService,
+    private readonly googleOAuth: GoogleOAuthService,
   ) {}
+
+  @Public()
+  @Get('google/start')
+  googleStart(@Query('intent') intent: string, @Res() res: Response): void {
+    const flow = this.googleOAuth.start(
+      intent === 'signup' ? 'signup' : 'login',
+    );
+    res.cookie('zemen_google_oauth_nonce', flow.nonce, {
+      httpOnly: true,
+      // Compose runs the API in production mode even for localhost. Derive
+      // this from the public URL so local HTTP OAuth works while deployed
+      // HTTPS callbacks still receive a Secure cookie.
+      secure: this.googleOAuth.secureCookies(),
+      sameSite: 'lax',
+      maxAge: 10 * 60 * 1000,
+      path: '/',
+    });
+    res.redirect(flow.url);
+  }
+
+  @Public()
+  @Get('google/callback')
+  async googleCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('error') oauthError: string | undefined,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (oauthError || !code || !state) {
+      res.redirect(
+        this.googleOAuth.frontendUrl('/oauth/google#status=cancelled'),
+      );
+      return;
+    }
+    try {
+      const result = await this.googleOAuth.callback(
+        code,
+        state,
+        req.cookies?.zemen_google_oauth_nonce ?? '',
+      );
+      res.clearCookie('zemen_google_oauth_nonce', { path: '/' });
+      const value = Buffer.from(JSON.stringify(result)).toString('base64url');
+      res.redirect(
+        this.googleOAuth.frontendUrl(`/oauth/google#result=${value}`),
+      );
+    } catch {
+      res.clearCookie('zemen_google_oauth_nonce', { path: '/' });
+      res.redirect(this.googleOAuth.frontendUrl('/oauth/google#status=failed'));
+    }
+  }
 
   @Public()
   @RequireTurnstile()
@@ -81,12 +144,60 @@ export class AuthController {
   // catches distributed-IP attacks too. Both layers are intentional.
   @Throttle({ default: { limit: 5, ttl: seconds(300) } })
   @ApiOperation({ summary: 'Email + password sign in' })
-  async login(
-    @Body() body: LoginDto,
+  async login(@Body() body: LoginDto): Promise<PendingAuthResponse> {
+    return this.auth.login(body);
+  }
+
+  @Public()
+  @Post('email-verification/resend')
+  @Throttle({ default: { limit: 5, ttl: seconds(3600) } })
+  async resendEmailVerification(
+    @Body() body: PendingTokenDto,
+  ): Promise<{ ok: true }> {
+    await this.otp.resendEmailVerification(body.pendingToken);
+    return { ok: true };
+  }
+
+  @Public()
+  @Post('email-verification/verify')
+  @Throttle({ default: { limit: 10, ttl: seconds(600) } })
+  async verifyEmail(
+    @Body() body: VerifyOtpDto,
     @Res({ passthrough: true }) res: Response,
   ): Promise<LoginResponse> {
-    const session = await this.auth.login(body);
-    return commitSession(session, res);
+    const user = await this.otp.verifyEmail(body.pendingToken, body.otp);
+    return commitSession(await this.auth.issueSession(user), res);
+  }
+
+  @Public()
+  @Post('2fa/options')
+  twoFactorOptions(@Body() body: PendingTokenDto) {
+    return this.otp.describeLogin(body.pendingToken);
+  }
+
+  @Public()
+  @Post('2fa/send')
+  @Throttle({ default: { limit: 5, ttl: seconds(3600) } })
+  async sendTwoFactor(@Body() body: SendTwoFactorDto): Promise<{ ok: true }> {
+    await this.otp.sendTwoFactor(body.pendingToken, body.method);
+    return { ok: true };
+  }
+
+  @Public()
+  @Post('2fa/verify')
+  @Throttle({ default: { limit: 10, ttl: seconds(600) } })
+  async verifyTwoFactor(
+    @Body() body: VerifyTwoFactorDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponse> {
+    const method = body.method;
+    const user = await this.otp.verifyTwoFactor(
+      body.pendingToken,
+      method,
+      body.otp,
+    );
+    await this.auth.completeLogin(user.id, user.email);
+    return commitSession(await this.auth.issueSession(user), res);
   }
 
   @Public()
@@ -100,7 +211,7 @@ export class AuthController {
     summary:
       'Exchange the HttpOnly refresh cookie for a fresh access token (rotates).',
     description:
-      'Reads the refresh token from the `eirms_refresh` HttpOnly cookie set at login. Returns a new access JWT (5 min) in JSON and rotates the cookie with a new refresh token (30 d). Presenting an already-revoked-but-not-expired refresh token is treated as compromise and invalidates every session for that user.',
+      'Reads the refresh token from the `eirms_refresh` HttpOnly cookie set at login. Returns a new configured-lifetime access JWT and rotates the cookie with a new refresh token (30 d). Presenting an already-revoked-but-not-expired refresh token is treated as compromise and invalidates every session for that user.',
   })
   async refresh(
     @Req() req: Request,
@@ -124,9 +235,7 @@ export class AuthController {
     description:
       'Always returns 200 — never reveals whether the email matches a user. Sends a reset link to the email when it does match an active account.',
   })
-  async forgotPassword(
-    @Body() body: ForgotPasswordDto,
-  ): Promise<{ ok: true }> {
+  async forgotPassword(@Body() body: ForgotPasswordDto): Promise<{ ok: true }> {
     await this.passwordReset.request(body.email);
     return { ok: true };
   }
@@ -137,7 +246,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Consume a password-reset token to set a new password.',
     description:
-      'Voids all of the user\'s refresh tokens on success — every device has to sign in again.',
+      "Voids all of the user's refresh tokens on success — every device has to sign in again.",
   })
   async resetPassword(@Body() body: ResetPasswordDto): Promise<{ ok: true }> {
     await this.passwordReset.reset(body.token, body.password);
@@ -181,8 +290,7 @@ export class AuthController {
   @Get('me/context')
   @SkipBranchContext()
   @ApiOperation({
-    summary:
-      'Full bootstrap context: user + their merchant + their branch.',
+    summary: 'Full bootstrap context: user + their merchant + their branch.',
     description:
       "Used by the SPA at boot to render the shell, PDFs, and POS receipts with the caller's seller details.",
   })
@@ -235,8 +343,7 @@ export class AuthController {
           ]);
           return {
             ...b,
-            hasCreds:
-              creds.clientId && creds.clientSecret && creds.apikey,
+            hasCreds: creds.clientId && creds.clientSecret && creds.apikey,
             hasCert: signing.privateKey && signing.cert,
           };
         }),
@@ -251,10 +358,8 @@ export class AuthController {
       availableBranches.find((b) => b.id === user.branchId) ?? null;
     const firstReady =
       availableBranches.find((b) => b.hasCreds && b.hasCert) ?? null;
-    const activeBranch =
-      pinned ?? firstReady ?? availableBranches[0] ?? null;
+    const activeBranch = pinned ?? firstReady ?? availableBranches[0] ?? null;
 
     return { user, merchant, activeBranch, availableBranches };
   }
-
 }

@@ -28,6 +28,15 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export interface PendingAuthResponse {
+  step: 'email-verification' | 'two-factor';
+  pendingToken: string;
+  email: string;
+  phone: string | null;
+  /** The account/pending state was created, but the initial OTP delivery failed. */
+  deliveryFailed?: boolean;
+}
+
 /** Internal — what AuthService produces. The raw refresh token is dropped
  *  in a HttpOnly cookie by the controller layer and never returned in JSON. */
 export interface IssuedSession extends LoginResponse {

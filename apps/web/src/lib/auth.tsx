@@ -35,6 +35,8 @@ import type {
   AvailableBranch,
   MeBranch,
   Merchant,
+  LoginResponse,
+  PendingAuthResponse,
 } from "./types";
 
 interface AuthContextValue {
@@ -53,8 +55,9 @@ interface AuthContextValue {
     email: string,
     password: string,
     turnstileToken?: string,
-  ) => Promise<void>;
-  signup: (input: SignupMerchantInput) => Promise<void>;
+  ) => Promise<PendingAuthResponse>;
+  signup: (input: SignupMerchantInput) => Promise<PendingAuthResponse>;
+  completeAuthentication: (result: LoginResponse) => Promise<void>;
   logout: () => void;
   /** Change the active branch. Persists via useBranchOverride (localStorage
    *  + X-Branch-Id) and re-fetches the me/context so activeBranch is fresh. */
@@ -116,9 +119,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [branch, setBranch] = useState<MeBranch | null>(null);
-  const [availableBranches, setAvailableBranches] = useState<
-    AvailableBranch[]
-  >([]);
+  const [availableBranches, setAvailableBranches] = useState<AvailableBranch[]>(
+    [],
+  );
   const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
   const [consentSession, setConsentSession] = useState<ConsentSession | null>(
     () => readConsentSession(),
@@ -223,7 +226,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string, turnstileToken?: string) => {
-      const result = await loginRequest(email.trim(), password, turnstileToken);
+      return loginRequest(email.trim(), password, turnstileToken);
+    },
+    [],
+  );
+
+  const completeAuthentication = useCallback(
+    async (result: LoginResponse) => {
       localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
       clearBranchSelection();
       setUser(result.user);
@@ -237,7 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* Non-fatal — UI keeps working with env-default seller info. */
       }
     },
-    [],
+    [reconcileActiveBranch],
   );
 
   const signup = useCallback(async (input: SignupMerchantInput) => {
@@ -245,20 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // merchant owner is signed in immediately. They land on /merchants with
     // a pending banner; invoice/receipt creation stays blocked until a
     // super-admin approves.
-    const result = await signupMerchant(input);
-    localStorage.setItem(TOKEN_STORAGE_KEY, result.token);
-    clearBranchSelection();
-    // Refresh cookie is set by the signup response, same as login.
-    setUser(result.user);
-    setStatus("authed");
-    try {
-      const ctx = await fetchMeContext();
-      setMerchant(ctx.merchant);
-      reconcileActiveBranch(ctx.activeBranch, ctx.availableBranches);
-      setAvailableBranches(ctx.availableBranches);
-    } catch {
-      // Non-fatal — see login() for the rationale.
-    }
+    return signupMerchant(input);
   }, []);
 
   const selectBranch = useCallback(
@@ -322,8 +318,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // server would 403. Fires a one-shot timer for the remaining time.
   useEffect(() => {
     if (!consentSession) return;
-    const remaining =
-      new Date(consentSession.expiresAt).getTime() - Date.now();
+    const remaining = new Date(consentSession.expiresAt).getTime() - Date.now();
     if (remaining <= 0) {
       exitMerchant();
       return;
@@ -333,14 +328,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [consentSession, exitMerchant]);
 
   const can = useCallback(
-    (code: string) =>
-      hasPermission(user?.role, code, consentSession?.scopes),
+    (code: string) => hasPermission(user?.role, code, consentSession?.scopes),
     [user?.role, consentSession],
   );
 
   const sellerInfo = useMemo<SellerInfo>(
-    () =>
-      user ? sellerInfoFromContext(merchant, branch) : SELLER_INFO,
+    () => (user ? sellerInfoFromContext(merchant, branch) : SELLER_INFO),
     [user, merchant, branch],
   );
 
@@ -351,8 +344,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const updated = await updatePreferences({ language });
         setUser(updated);
-      } catch {
-      }
+      } catch {}
     },
     [user],
   );
@@ -369,6 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sellerInfo,
       login,
       signup,
+      completeAuthentication,
       logout,
       selectBranch,
       language,
@@ -387,6 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sellerInfo,
       login,
       signup,
+      completeAuthentication,
       logout,
       selectBranch,
       language,

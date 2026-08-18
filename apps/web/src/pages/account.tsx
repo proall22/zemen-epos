@@ -23,9 +23,17 @@ import {
   downloadMerchantExport,
   getMerchant,
   listMerchantExports,
+  getRegistrationStatus,
+  replaceRegistrationDocument,
   updateMerchant,
 } from "@/lib/resources";
-import type { Merchant, MerchantExport, MerchantExportStatus } from "@/lib/types";
+import type {
+  Merchant,
+  MerchantExport,
+  MerchantExportStatus,
+  RegistrationReview,
+} from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
 
 const STATUS_LABEL: Record<MerchantExportStatus, string> = {
   PENDING: "Queued",
@@ -61,10 +69,94 @@ export function AccountPage() {
         </p>
       </header>
 
+      <RegistrationStatusSection merchantId={merchantId} />
       <MerchantSection merchantId={merchantId} />
       <ExportSection merchantId={merchantId} />
       <TeamLinks merchantId={merchantId} />
     </div>
+  );
+}
+
+function RegistrationStatusSection({ merchantId }: { merchantId: string }) {
+  const [status, setStatus] = useState<RegistrationReview | null>(null);
+  const [uploading, setUploading] = useState(false);
+  useEffect(() => {
+    void getRegistrationStatus(merchantId)
+      .then(setStatus)
+      .catch(() => undefined);
+  }, [merchantId]);
+  if (!status) return null;
+  const approved = status.document.status === "APPROVED";
+  const rejected = status.document.status === "REJECTED";
+  return (
+    <section className="rounded-xl border bg-card p-5 shadow-sm">
+      <h2 className="text-lg font-semibold">Registration status</h2>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Email verification
+          </p>
+          {status.applicant.emailVerifiedAt ? (
+            <Badge variant="success">
+              <CheckCircle2 className="mr-1 size-3" /> Verified
+            </Badge>
+          ) : (
+            <Badge variant="destructive">
+              <AlertTriangle className="mr-1 size-3" /> Not verified
+            </Badge>
+          )}
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Legal document</p>
+          <Badge
+            variant={
+              approved ? "success" : rejected ? "destructive" : "warning"
+            }
+          >
+            {approved ? (
+              <CheckCircle2 className="mr-1 size-3" />
+            ) : rejected ? (
+              <AlertTriangle className="mr-1 size-3" />
+            ) : (
+              <Clock className="mr-1 size-3" />
+            )}
+            {approved ? "Approved" : rejected ? "Rejected" : "Under review"}
+          </Badge>
+        </div>
+      </div>
+      {status.document.rejectionReason && (
+        <div className="mt-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+          <strong>Reason:</strong> {status.document.rejectionReason}
+        </div>
+      )}
+      {rejected && (
+        <div className="mt-4">
+          <Label htmlFor="replacement-document">
+            Upload a corrected document
+          </Label>
+          <Input
+            id="replacement-document"
+            className="mt-2"
+            type="file"
+            accept="application/pdf,image/jpeg,image/png"
+            disabled={uploading}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setUploading(true);
+              try {
+                setStatus(await replaceRegistrationDocument(merchantId, file));
+              } finally {
+                setUploading(false);
+              }
+            }}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            PDF, JPEG, or PNG. Maximum 5 MB.
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -191,18 +283,62 @@ function MerchantSection({ merchantId }: { merchantId: string }) {
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Legal name" value={form.legalName} onChange={(v) => patch("legalName", v)} />
-        <Field label="Trade name" value={form.tradeName} onChange={(v) => patch("tradeName", v)} />
+        <Field
+          label="Legal name"
+          value={form.legalName}
+          onChange={(v) => patch("legalName", v)}
+        />
+        <Field
+          label="Trade name"
+          value={form.tradeName}
+          onChange={(v) => patch("tradeName", v)}
+        />
         <Field label="TIN" value={form.tin} onChange={(v) => patch("tin", v)} />
-        <Field label="VAT number" value={form.vatNumber} onChange={(v) => patch("vatNumber", v)} />
-        <Field label="Email" value={form.email} onChange={(v) => patch("email", v)} />
-        <Field label="Phone" value={form.phone} onChange={(v) => patch("phone", v)} />
-        <Field label="City" value={form.city} onChange={(v) => patch("city", v)} />
-        <Field label="Region" value={form.region} onChange={(v) => patch("region", v)} />
-        <Field label="Zone" value={form.zone} onChange={(v) => patch("zone", v)} />
-        <Field label="Wereda" value={form.wereda} onChange={(v) => patch("wereda", v)} />
-        <Field label="Kebele" value={form.kebele} onChange={(v) => patch("kebele", v)} />
-        <Field label="House number" value={form.houseNumber} onChange={(v) => patch("houseNumber", v)} />
+        <Field
+          label="VAT number"
+          value={form.vatNumber}
+          onChange={(v) => patch("vatNumber", v)}
+        />
+        <Field
+          label="Email"
+          value={form.email}
+          onChange={(v) => patch("email", v)}
+        />
+        <Field
+          label="Phone"
+          value={form.phone}
+          onChange={(v) => patch("phone", v)}
+        />
+        <Field
+          label="City"
+          value={form.city}
+          onChange={(v) => patch("city", v)}
+        />
+        <Field
+          label="Region"
+          value={form.region}
+          onChange={(v) => patch("region", v)}
+        />
+        <Field
+          label="Zone"
+          value={form.zone}
+          onChange={(v) => patch("zone", v)}
+        />
+        <Field
+          label="Wereda"
+          value={form.wereda}
+          onChange={(v) => patch("wereda", v)}
+        />
+        <Field
+          label="Kebele"
+          value={form.kebele}
+          onChange={(v) => patch("kebele", v)}
+        />
+        <Field
+          label="House number"
+          value={form.houseNumber}
+          onChange={(v) => patch("houseNumber", v)}
+        />
       </div>
 
       {error && <ErrorCallout title={error.title} items={error.items} />}
@@ -214,8 +350,17 @@ function MerchantSection({ merchantId }: { merchantId: string }) {
             Saved
           </span>
         )}
-        <Button type="button" onClick={save} disabled={busy} className="gap-1.5">
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+        <Button
+          type="button"
+          onClick={save}
+          disabled={busy}
+          className="gap-1.5"
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
           {busy ? "Saving…" : "Save changes"}
         </Button>
       </div>
@@ -319,8 +464,17 @@ function ExportSection({ merchantId }: { merchantId: string }) {
           The export runs in the background. We'll email you when it's ready to
           download.
         </p>
-        <Button type="button" onClick={request} disabled={busy} className="gap-1.5">
-          {busy ? <Loader2 className="size-4 animate-spin" /> : <FileArchive className="size-4" />}
+        <Button
+          type="button"
+          onClick={request}
+          disabled={busy}
+          className="gap-1.5"
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <FileArchive className="size-4" />
+          )}
           {busy ? "Queuing…" : "Request export"}
         </Button>
       </div>
@@ -329,8 +483,7 @@ function ExportSection({ merchantId }: { merchantId: string }) {
 
       {exports !== null && exports.length === 0 ? (
         <p className="rounded-md border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
-          No exports yet — click "Request export" to generate your first
-          bundle.
+          No exports yet — click "Request export" to generate your first bundle.
         </p>
       ) : (
         <ul className="flex flex-col divide-y rounded-md border">
@@ -342,12 +495,9 @@ function ExportSection({ merchantId }: { merchantId: string }) {
                   {new Date(row.requestedAt).toLocaleString()}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {row.invoiceCount} invoices · {row.receiptCount} receipts ·
-                  {" "}
+                  {row.invoiceCount} invoices · {row.receiptCount} receipts ·{" "}
                   {row.inventoryCount} items · {row.buyerCount} buyers
-                  {row.fileBytes
-                    ? ` · ${humanBytes(row.fileBytes)}`
-                    : ""}
+                  {row.fileBytes ? ` · ${humanBytes(row.fileBytes)}` : ""}
                 </span>
               </div>
               {row.status === "READY" && (
@@ -432,7 +582,9 @@ function TeamLinks({ merchantId }: { merchantId: string }) {
       >
         <FileArchive className="size-5 text-muted-foreground" />
         <div className="flex flex-col">
-          <span className="text-sm font-medium">Branches & EIRMS credentials</span>
+          <span className="text-sm font-medium">
+            Branches & EIRMS credentials
+          </span>
           <span className="text-xs text-muted-foreground">
             Manage branches and rotate per-branch credentials.
           </span>

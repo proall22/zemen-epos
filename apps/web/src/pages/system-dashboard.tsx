@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   Building2,
+  Bell,
   CheckCircle2,
   CircleCheck,
   CircleX,
@@ -12,6 +13,7 @@ import {
   FileText,
   Key,
   Lock,
+  MailCheck,
   ReceiptText,
   RefreshCw,
   ScrollText,
@@ -39,12 +41,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  getSystemHealthSummary,
-  getSystemSummary,
-  rejectMerchant,
-  updateMerchant,
-} from "@/lib/resources";
+import { readRequestError } from "@/lib/api-errors";
+import { getSystemHealthSummary, getSystemSummary } from "@/lib/resources";
 import type { SystemHealthSummary, SystemSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -59,11 +57,11 @@ import { cn } from "@/lib/utils";
  */
 export function SystemDashboardPage() {
   const [data, setData] = useState<SystemSummary | null>(null);
-  const [healthData, setHealthData] = useState<SystemHealthSummary | null>(null);
+  const [healthData, setHealthData] = useState<SystemHealthSummary | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
-  const [rejecting, setRejecting] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -80,35 +78,9 @@ export function SystemDashboardPage() {
       setData(summary);
       setHealthData(health);
     } catch (e) {
-      setError((e as Error).message);
+      setError(readRequestError(e, "Unable to load dashboard information."));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleApprove(merchantId: string) {
-    setApproving(merchantId);
-    try {
-      await updateMerchant(merchantId, { active: true });
-      await refresh();
-    } catch (e) {
-      alert((e as Error).message);
-    } finally {
-      setApproving(null);
-    }
-  }
-
-  async function handleReject(merchantId: string) {
-    const reason = prompt("Rejection reason (optional):");
-    if (reason === null) return; // User cancelled
-    setRejecting(merchantId);
-    try {
-      await rejectMerchant(merchantId, reason || undefined);
-      await refresh();
-    } catch (e) {
-      alert((e as Error).message);
-    } finally {
-      setRejecting(null);
     }
   }
 
@@ -163,6 +135,7 @@ export function SystemDashboardPage() {
             label="Total Merchants"
             value={data?.merchants.total}
             hint="All registered"
+            to="/merchants"
           />
           <StatCard
             icon={CheckCircle2}
@@ -170,6 +143,7 @@ export function SystemDashboardPage() {
             value={data?.merchants.active}
             hint="Approved & enabled"
             tone="emerald"
+            to="/merchants?status=active"
           />
           <StatCard
             icon={Clock}
@@ -177,6 +151,7 @@ export function SystemDashboardPage() {
             value={data?.merchants.pending}
             hint="Awaiting review"
             tone="amber"
+            to="/merchants?status=pending"
           />
           <StatCard
             icon={XCircle}
@@ -184,18 +159,102 @@ export function SystemDashboardPage() {
             value={data?.merchants.suspended}
             hint="Approved but disabled"
             tone="rose"
+            to="/merchants?status=suspended"
           />
         </div>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={Store} label="Total Branches" value={data?.tenants.totalBranches} hint={`${data?.tenants.activeBranches ?? 0} active`} />
-          <StatCard icon={Users} label="Active Users" value={data?.tenants.activeUsers} />
-          <StatCard icon={XCircle} label="Rejected Applications" value={data?.merchants.rejected} tone="rose" />
+          <StatCard
+            icon={Store}
+            label="Total Branches"
+            value={data?.tenants.totalBranches}
+            hint={`${data?.tenants.activeBranches ?? 0} active`}
+            to="/branch-approvals"
+          />
+          <StatCard
+            icon={Users}
+            label="Active Users"
+            value={data?.tenants.activeUsers}
+            to="/users"
+          />
+          <StatCard
+            icon={XCircle}
+            label="Rejected Applications"
+            value={data?.merchants.rejected}
+            tone="rose"
+            to="/merchants?status=rejected"
+          />
           <StatCard
             icon={CheckCircle2}
             label="Invoice Success Rate"
-            value={data ? Math.round((data.documents.invoicesAllTime / Math.max(1, data.documents.invoicesAllTime + data.platformActivity.failedInvoices)) * 100) : undefined}
+            value={
+              data
+                ? Math.round(
+                    (data.documents.invoicesAllTime /
+                      Math.max(
+                        1,
+                        data.documents.invoicesAllTime +
+                          data.platformActivity.failedInvoices,
+                      )) *
+                      100,
+                  )
+                : undefined
+            }
             hint="Percent accepted"
             tone="emerald"
+            to="/invoices"
+          />
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Registration Reviews
+          </h2>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/super-admin/registrations">
+              <Bell className="size-4" /> Notifications{" "}
+              <Badge variant="warning">
+                {data?.registrationReviews.pending ?? 0}
+              </Badge>
+            </Link>
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <StatCard
+            icon={Clock}
+            label="Pending"
+            value={data?.registrationReviews.pending}
+            tone="amber"
+            to="/super-admin/registrations?status=pending"
+          />
+          <StatCard
+            icon={MailCheck}
+            label="Email Verified"
+            value={data?.registrationReviews.emailVerified}
+            tone="emerald"
+            to="/super-admin/registrations?status=email-verified"
+          />
+          <StatCard
+            icon={CircleX}
+            label="Email Not Verified"
+            value={data?.registrationReviews.emailNotVerified}
+            tone="rose"
+            to="/super-admin/registrations?status=email-unverified"
+          />
+          <StatCard
+            icon={CircleCheck}
+            label="Documents Approved"
+            value={data?.registrationReviews.approved}
+            tone="emerald"
+            to="/super-admin/registrations?status=approved"
+          />
+          <StatCard
+            icon={XCircle}
+            label="Documents Rejected"
+            value={data?.registrationReviews.rejected}
+            tone="rose"
+            to="/super-admin/registrations?status=rejected"
           />
         </div>
       </section>
@@ -211,12 +270,14 @@ export function SystemDashboardPage() {
             label="Invoices Today"
             value={data?.documents.invoicesToday}
             hint="Accepted by EIRMS"
+            to="/invoices"
           />
           <StatCard
             icon={ReceiptText}
             label="Receipts Today"
             value={data?.platformActivity?.receiptsToday}
             hint="Issued today"
+            to="/receipts"
           />
           <StatCard
             icon={AlertTriangle}
@@ -224,6 +285,7 @@ export function SystemDashboardPage() {
             value={data?.platformActivity?.failedInvoices}
             hint="EIRMS errors"
             tone="rose"
+            to="/invoices"
           />
           <StatCard
             icon={Clock}
@@ -231,6 +293,7 @@ export function SystemDashboardPage() {
             value={data?.platformActivity?.pendingInvoices}
             hint="Awaiting EIRMS"
             tone="amber"
+            to="/invoices"
           />
         </div>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -238,22 +301,26 @@ export function SystemDashboardPage() {
             icon={FileText}
             label="Invoices This Month"
             value={data?.documents.invoicesThisMonth}
+            to="/invoices"
           />
           <StatCard
             icon={FileText}
             label="Invoices All-Time"
             value={data?.documents.invoicesAllTime}
+            to="/invoices"
           />
           <StatCard
             icon={ReceiptText}
             label="Receipts All-Time"
             value={data?.documents.receiptsAllTime}
+            to="/receipts"
           />
           <StatCard
             icon={XCircle}
             label="Cancelled Invoices"
             value={data?.platformActivity?.cancelledInvoices}
             tone="rose"
+            to="/invoices"
           />
         </div>
       </section>
@@ -318,9 +385,7 @@ export function SystemDashboardPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="text-sm">
-                          {m.ownerName ?? "—"}
-                        </span>
+                        <span className="text-sm">{m.ownerName ?? "—"}</span>
                         {m.ownerEmail && (
                           <span className="text-xs text-muted-foreground">
                             {m.ownerEmail}
@@ -330,13 +395,21 @@ export function SystemDashboardPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="text-sm">{m.mainBranch?.name ?? "—"}</span>
+                        <span className="text-sm">
+                          {m.mainBranch?.name ?? "—"}
+                        </span>
                         {(m.mainBranch?.city || m.mainBranch?.region) && (
                           <span className="text-xs text-muted-foreground">
-                            {[m.mainBranch.city, m.mainBranch.region].filter(Boolean).join(", ")}
+                            {[m.mainBranch.city, m.mainBranch.region]
+                              .filter(Boolean)
+                              .join(", ")}
                           </span>
                         )}
-                        {m.mainBranch && <Badge variant="warning" className="mt-1 w-fit">Approved with merchant</Badge>}
+                        {m.mainBranch && (
+                          <Badge variant="warning" className="mt-1 w-fit">
+                            Approved with merchant
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -345,37 +418,18 @@ export function SystemDashboardPage() {
                       })}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 border-muted-foreground/30 text-xs"
-                          asChild
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        asChild
+                      >
+                        <Link
+                          to={`/super-admin/registrations?merchant=${encodeURIComponent(m.id)}`}
                         >
-                          <Link to={`/merchants?selected=${m.id}`}>
-                            Review
-                          </Link>
-                        </Button>
-                        <Button
-                          size="sm"
-                          className="h-7 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
-                          disabled={approving === m.id}
-                          onClick={() => void handleApprove(m.id)}
-                        >
-                          <CircleCheck className="mr-1 size-3" />
-                          {approving === m.id ? "Approving…" : "Approve"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="h-7 text-xs"
-                          disabled={rejecting === m.id}
-                          onClick={() => void handleReject(m.id)}
-                        >
-                          <CircleX className="mr-1 size-3" />
-                          {rejecting === m.id ? "Rejecting…" : "Reject"}
-                        </Button>
-                      </div>
+                          Review registration
+                        </Link>
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -539,10 +593,7 @@ export function SystemDashboardPage() {
           <CardContent className="p-0">
             <ul className="divide-y">
               {data.recentAuditLogs.map((log) => (
-                <li
-                  key={log.id}
-                  className="flex items-start gap-3 px-6 py-3"
-                >
+                <li key={log.id} className="flex items-start gap-3 px-6 py-3">
                   <div
                     className={cn(
                       "mt-0.5 size-2 rounded-full shrink-0",
@@ -608,13 +659,14 @@ export function SystemDashboardPage() {
                         <div
                           className="h-2 rounded-full bg-primary"
                           style={{
-                            width: `${maxVolume > 0
-                              ? Math.max(
-                                4,
-                                (m.invoiceCount / maxVolume) * 100,
-                              )
-                              : 0
-                              }%`,
+                            width: `${
+                              maxVolume > 0
+                                ? Math.max(
+                                    4,
+                                    (m.invoiceCount / maxVolume) * 100,
+                                  )
+                                : 0
+                            }%`,
                           }}
                         />
                       </div>
@@ -639,12 +691,14 @@ function StatCard({
   value,
   hint,
   tone = "default",
+  to,
 }: {
   icon: typeof Building2;
   label: string;
   value: number | undefined;
   hint?: string;
   tone?: "default" | "emerald" | "amber" | "rose";
+  to?: string;
 }) {
   const toneClass = {
     default: "text-blue-800 dark:text-blue-300",
@@ -658,8 +712,14 @@ function StatCard({
     amber: "bg-amber-50 dark:bg-amber-950/30",
     rose: "bg-rose-50 dark:bg-rose-950/30",
   }[tone];
-  return (
-    <Card>
+  const card = (
+    <Card
+      className={cn(
+        "h-full transition-[border-color,background-color,box-shadow,transform] duration-150",
+        to &&
+          "cursor-pointer hover:-translate-y-px hover:border-primary/30 hover:bg-muted/20 hover:shadow-md active:translate-y-0",
+      )}
+    >
       <CardContent className="flex items-center gap-4 py-5">
         <div
           className={cn(
@@ -671,7 +731,14 @@ function StatCard({
         </div>
         <div className="flex flex-col">
           <span className="text-2xl font-semibold tabular-nums">
-            {value === undefined ? "—" : value.toLocaleString()}
+            {value === undefined ? (
+              <span
+                className="block h-7 w-12 animate-pulse rounded bg-muted"
+                aria-label="Loading"
+              />
+            ) : (
+              value.toLocaleString()
+            )}
           </span>
           <span className="text-xs font-medium text-muted-foreground">
             {label}
@@ -682,6 +749,17 @@ function StatCard({
         </div>
       </CardContent>
     </Card>
+  );
+  return to ? (
+    <Link
+      to={to}
+      aria-label={`View ${label}`}
+      className="block h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      {card}
+    </Link>
+  ) : (
+    card
   );
 }
 

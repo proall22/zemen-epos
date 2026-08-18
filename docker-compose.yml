@@ -32,6 +32,17 @@ services:
       retries: 10
     restart: unless-stopped
 
+  vault-permissions:
+    image: alpine:3.20
+    container_name: zemen-epos-vault-permissions
+    entrypoint: ["/bin/sh", "/init/entrypoint.sh"]
+    volumes:
+      - ./vault/permissions:/init:ro
+      - ./vault/data:/data
+      - ./vault/audit:/audit
+      - ./vault/approle:/approle
+    restart: "no"
+
   vault:
     image: hashicorp/vault:1.18
     container_name: zemen-epos-vault
@@ -42,6 +53,9 @@ services:
     environment:
       VAULT_ADDR: http://0.0.0.0:8200
     command: ["vault", "server", "-config=/vault/config/vault.hcl"]
+    depends_on:
+      vault-permissions:
+        condition: service_completed_successfully
     volumes:
       - ./vault/config:/vault/config:ro
       - ./vault/data:/vault/data
@@ -100,6 +114,29 @@ services:
       METRICS_PASS: ${METRICS_PASS:-metrics}
       EXPORTS_STORAGE_DIR: /var/lib/zemen/exports
       IMAGE_UPLOAD_DIR: /var/lib/zemen/uploads/inventory
+      LEGAL_DOCUMENT_STORAGE_DIR: /var/lib/zemen/legal-documents
+      AUTH_OTP_LENGTH: ${AUTH_OTP_LENGTH:-6}
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:-3600}
+      # Browser-visible nginx gateway path. Direct API development keeps the
+      # service default (/auth).
+      COOKIE_PATH: ${COOKIE_PATH:-/api/auth}
+      AUTH_OTP_TTL_SECONDS: ${AUTH_OTP_TTL_SECONDS:-900}
+      AUTH_OTP_MAX_ATTEMPTS: ${AUTH_OTP_MAX_ATTEMPTS:-5}
+      AUTH_OTP_RESEND_COOLDOWN_SECONDS: ${AUTH_OTP_RESEND_COOLDOWN_SECONDS:-60}
+      AUTH_PENDING_TOKEN_TTL_SECONDS: ${AUTH_PENDING_TOKEN_TTL_SECONDS:-900}
+      AUTH_FAILED_LOGIN_ALERT_THRESHOLD: ${AUTH_FAILED_LOGIN_ALERT_THRESHOLD:-5}
+      REGISTRATION_REVIEW_EMAIL: ${REGISTRATION_REVIEW_EMAIL:-}
+      LEGAL_DOCUMENT_MAX_BYTES: ${LEGAL_DOCUMENT_MAX_BYTES:-5242880}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_SECURE: ${MAIL_SECURE:-false}
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:4999}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:4999/api/auth/google/callback}
       EXPORTS_RETENTION_DAYS: ${EXPORTS_RETENTION_DAYS:-7}
       PRISMA_MIGRATE_RETRIES: ${PRISMA_MIGRATE_RETRIES:-6}
       EIRMS_SIGNING_PRIVATE_KEY_FILE: ${EIRMS_CERT_DIR:+/etc/zemen/private_key.key}
@@ -110,6 +147,7 @@ services:
       - ./vault/approle:/vault/approle:ro
       - ./exports:/var/lib/zemen/exports
       - ./uploads:/var/lib/zemen/uploads
+      - ./legal-documents:/var/lib/zemen/legal-documents
       - ${EIRMS_CERT_DIR:-./apps/api/secrets/zemen}:/etc/zemen:ro
     depends_on:
       # postgres: # Remove postgres dependency

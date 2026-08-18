@@ -19,6 +19,7 @@ import { AuditPage } from "@/pages/audit";
 import { EmailDeliverabilityPage } from "@/pages/email-deliverability";
 import { DashboardPage } from "@/pages/dashboard";
 import { BranchApprovalsPage } from "@/pages/branch-approvals";
+import { RegistrationReviewsPage } from "@/pages/registration-reviews";
 import { InventoryPage } from "@/pages/inventory";
 import { ScheduledReportsPage } from "@/pages/scheduled-reports";
 import { InventoryPurchasesPage } from "@/pages/inventory-purchases";
@@ -32,12 +33,15 @@ import { BranchOnboardingPage } from "@/pages/branch-onboarding";
 import { ConsentDecisionPage } from "@/pages/consent-decision";
 import { ForgotPasswordPage } from "@/pages/forgot-password";
 import { LoginPage } from "@/pages/login";
+import { GoogleOAuthCallbackPage } from "@/pages/google-oauth-callback";
 import { MerchantsPage } from "@/pages/merchants";
 import { PublicInvoicePage } from "@/pages/public-invoice";
 import { PublicReceiptPage } from "@/pages/public-receipt";
 import { RegionBlockedPage } from "@/pages/region-blocked";
 import { ResetPasswordPage } from "@/pages/reset-password";
 import { SignupPage } from "@/pages/signup";
+import { VerifyEmailPage } from "@/pages/verify-email";
+import { TwoFactorPage } from "@/pages/two-factor";
 import { StatusPage } from "@/pages/status";
 import { ReceiptPrintPage } from "@/pages/receipt-print";
 import { ReceiptsPage } from "@/pages/receipts";
@@ -103,10 +107,14 @@ export default function App() {
       <AuthProvider>
         <SentryRoutes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/oauth/google" element={<GoogleOAuthCallbackPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           {/* Public merchant self-signup */}
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/auth" element={<TwoFactorPage />} />
+          <Route path="/2fa" element={<Navigate to="/auth" replace />} />
           {/* Public, login-free SLA status page */}
           <Route path="/status" element={<StatusPage />} />
           {/* Public, login-free buyer link from notification email/SMS */}
@@ -117,11 +125,13 @@ export default function App() {
             {/* Full-screen branch onboarding wizard — outside AppShell so it
                 gets the same immersive treatment as merchant signup. */}
             <Route
-                path="/merchants/:merchantId/branches/new"
-                element={
-                  <Guarded path="/merchants/:merchantId/branches/new"><BranchOnboardingPage /></Guarded>
-                }
-              />
+              path="/merchants/:merchantId/branches/new"
+              element={
+                <Guarded path="/merchants/:merchantId/branches/new">
+                  <BranchOnboardingPage />
+                </Guarded>
+              }
+            />
             {/* Consent decision — magic-link target. Inside ProtectedRoute so
                 the merchant admin must be logged in; standalone (no AppShell)
                 for a focused approve/decline screen. */}
@@ -131,125 +141,177 @@ export default function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <Guarded path="/dashboard"><DashboardPage /></Guarded>
+                  <Guarded path="/dashboard">
+                    <DashboardPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/reports"
                 element={
-                  <Guarded path="/reports"><ScheduledReportsPage /></Guarded>
+                  <Guarded path="/reports">
+                    <ScheduledReportsPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/sale"
                 element={
-                  <Guarded path="/sale"><SalePage /></Guarded>
+                  <Guarded path="/sale">
+                    <SalePage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/invoices"
                 element={
-                  <Guarded path="/invoices"><InvoicesPage /></Guarded>
+                  <Guarded path="/invoices">
+                    <InvoicesPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/invoices/:id"
                 element={
-                  <Guarded path="/invoices/:id"><InvoicePrintPage /></Guarded>
+                  <Guarded path="/invoices/:id">
+                    <InvoicePrintPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/receipts"
                 element={
-                  <Guarded path="/receipts"><ReceiptsPage /></Guarded>
+                  <Guarded path="/receipts">
+                    <ReceiptsPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/receipts/:id"
                 element={
-                  <Guarded path="/receipts/:id"><ReceiptPrintPage /></Guarded>
+                  <Guarded path="/receipts/:id">
+                    <ReceiptPrintPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/withholding"
                 element={
-                  <Guarded path="/withholding"><WithholdingPage /></Guarded>
+                  <Guarded path="/withholding">
+                    <WithholdingPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory"
                 element={
-                  <Guarded path="/inventory"><InventoryPage /></Guarded>
+                  <Guarded path="/inventory">
+                    <InventoryPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory/stores"
                 element={
-                  <Guarded path="/inventory/stores"><InventoryStoresPage /></Guarded>
+                  <Guarded path="/inventory/stores">
+                    <InventoryStoresPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory/movements"
                 element={
-                  <Guarded path="/inventory/movements"><InventoryMovementsPage /></Guarded>
+                  <Guarded path="/inventory/movements">
+                    <InventoryMovementsPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory/vendors"
                 element={
-                  <Guarded path="/inventory/vendors"><InventoryVendorsPage /></Guarded>
+                  <Guarded path="/inventory/vendors">
+                    <InventoryVendorsPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory/purchases"
                 element={
-                  <Guarded path="/inventory/purchases"><InventoryPurchasesPage /></Guarded>
+                  <Guarded path="/inventory/purchases">
+                    <InventoryPurchasesPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/inventory/harmonization"
                 element={
-                  <Guarded path="/inventory/harmonization"><InventoryHarmonizationPage /></Guarded>
+                  <Guarded path="/inventory/harmonization">
+                    <InventoryHarmonizationPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/users"
                 element={
-                  <Guarded path="/users"><UsersPage /></Guarded>
+                  <Guarded path="/users">
+                    <UsersPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/merchants"
                 element={
-                  <Guarded path="/merchants"><MerchantsPage /></Guarded>
+                  <Guarded path="/merchants">
+                    <MerchantsPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/branch-approvals"
-                element={<Guarded path="/branch-approvals"><BranchApprovalsPage /></Guarded>}
+                element={
+                  <Guarded path="/branch-approvals">
+                    <BranchApprovalsPage />
+                  </Guarded>
+                }
+              />
+              <Route
+                path="/super-admin/registrations"
+                element={
+                  <Guarded path="/super-admin/registrations">
+                    <RegistrationReviewsPage />
+                  </Guarded>
+                }
               />
               <Route
                 path="/account"
                 element={
-                  <Guarded path="/account"><AccountPage /></Guarded>
+                  <Guarded path="/account">
+                    <AccountPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/audit"
                 element={
-                  <Guarded path="/audit"><AuditPage /></Guarded>
+                  <Guarded path="/audit">
+                    <AuditPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/deliverability"
                 element={
-                  <Guarded path="/deliverability"><EmailDeliverabilityPage /></Guarded>
+                  <Guarded path="/deliverability">
+                    <EmailDeliverabilityPage />
+                  </Guarded>
                 }
               />
               <Route
                 path="/admin/translations"
                 element={
-                  <Guarded path="/admin/translations"><AdminTranslationsPage /></Guarded>
+                  <Guarded path="/admin/translations">
+                    <AdminTranslationsPage />
+                  </Guarded>
                 }
               />
               <Route path="*" element={<HomeRedirect />} />

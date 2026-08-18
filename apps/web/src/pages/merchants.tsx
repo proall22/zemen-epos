@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Building2,
+  ChevronDown,
   CircleCheck,
   CircleX,
   Clock,
+  Eye,
   KeyRound,
   Loader2,
   Mail,
@@ -29,14 +32,14 @@ import { ErrorCallout } from "@/components/error-callout";
 import { MerchantFormSheet } from "@/components/merchant-form-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Sheet,
   SheetBody,
@@ -55,7 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiError } from "@/lib/api";
-import { readApiMessage } from "@/lib/api-errors";
+import { readApiMessage, readRequestError } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
 import {
   approveBranch,
@@ -75,8 +78,10 @@ import { cn } from "@/lib/utils";
 export function MerchantsPage() {
   const { can, user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [search, setSearch] = useState("");
+  const requestedStatus = searchParams.get("status") ?? "all";
   // Seed from ?selected= so returning from the branch wizard reselects the
   // merchant the user was working on.
   const [selectedId, setSelectedId] = useState<string | null>(() =>
@@ -101,6 +106,7 @@ export function MerchantsPage() {
   /** Branch whose certificate wizard is open, if any. */
   const [certBranch, setCertBranch] = useState<SafeBranch | null>(null);
   const [drawerBranch, setDrawerBranch] = useState<SafeBranch | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   useEffect(() => {
     void refreshMerchants();
@@ -115,6 +121,39 @@ export function MerchantsPage() {
     () => merchants.find((m) => m.id === selectedId) ?? null,
     [merchants, selectedId],
   );
+  const visibleMerchants = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return merchants.filter((merchant) => {
+      const statusMatches =
+        requestedStatus === "all" ||
+        (requestedStatus === "active" &&
+          Boolean(merchant.approvedAt) &&
+          merchant.active) ||
+        (requestedStatus === "pending" &&
+          !merchant.approvedAt &&
+          !merchant.rejectedAt) ||
+        (requestedStatus === "suspended" &&
+          Boolean(merchant.approvedAt) &&
+          !merchant.active) ||
+        (requestedStatus === "rejected" && Boolean(merchant.rejectedAt));
+      if (!statusMatches) return false;
+      return (
+        !term ||
+        merchant.legalName.toLowerCase().includes(term) ||
+        merchant.tradeName?.toLowerCase().includes(term) ||
+        merchant.tin.toLowerCase().includes(term) ||
+        merchant.owner?.email.toLowerCase().includes(term)
+      );
+    });
+  }, [merchants, requestedStatus, search]);
+
+  useEffect(() => {
+    setSelectedId((current) =>
+      current && visibleMerchants.some((merchant) => merchant.id === current)
+        ? current
+        : (visibleMerchants[0]?.id ?? null),
+    );
+  }, [visibleMerchants]);
 
   async function refreshMerchants() {
     setLoading(true);
@@ -131,13 +170,8 @@ export function MerchantsPage() {
       setMerchants(sorted);
       // Keep the current selection if it still exists; otherwise fall back to
       // the first row so the right panel always has something to show.
-      setSelectedId((prev) =>
-        prev && sorted.some((m) => m.id === prev)
-          ? prev
-          : (sorted[0]?.id ?? null),
-      );
     } catch (e) {
-      setError((e as Error).message);
+      setError(readRequestError(e, "Unable to load merchant information."));
     } finally {
       setLoading(false);
     }
@@ -181,16 +215,22 @@ export function MerchantsPage() {
 
   async function decideBranch(b: SafeBranch, decision: "approve" | "reject") {
     try {
-      const reason = decision === "reject"
-        ? window.prompt("Reason for rejecting this branch (optional):")
-        : null;
+      const reason =
+        decision === "reject"
+          ? window.prompt("Reason for rejecting this branch (optional):")
+          : null;
       if (decision === "reject" && reason === null) return;
-      const updated = decision === "approve"
-        ? await approveBranch(b.merchantId, b.id)
-        : await rejectBranch(b.merchantId, b.id, reason || undefined);
-      setBranches((prev) => prev.map((x) => x.id === updated.id ? updated : x));
+      const updated =
+        decision === "approve"
+          ? await approveBranch(b.merchantId, b.id)
+          : await rejectBranch(b.merchantId, b.id, reason || undefined);
+      setBranches((prev) =>
+        prev.map((x) => (x.id === updated.id ? updated : x)),
+      );
     } catch (e) {
-      setBranchesError(readApiMessage((e as ApiError).body) ?? (e as Error).message);
+      setBranchesError(
+        readApiMessage((e as ApiError).body) ?? (e as Error).message,
+      );
     }
   }
 
@@ -198,6 +238,14 @@ export function MerchantsPage() {
   const canEditMerchant = can("merchant.update");
   const canCreateBranch = can("branch.create");
   const canEditBranch = can("branch.update");
+
+  function selectStatus(status: string) {
+    const params = new URLSearchParams(searchParams);
+    if (status === "all") params.delete("status");
+    else params.set("status", status);
+    params.delete("selected");
+    setSearchParams(params, { replace: true });
+  }
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-10">
@@ -244,24 +292,53 @@ export function MerchantsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="size-4 text-muted-foreground" />
-              {merchants.length} merchant{merchants.length === 1 ? "" : "s"}
+              {visibleMerchants.length} merchant
+              {visibleMerchants.length === 1 ? "" : "s"}
             </CardTitle>
+            <Input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, TIN, or owner email"
+              aria-label="Search merchants"
+              className="mt-3"
+            />
+            <div
+              className="mt-2 flex flex-wrap gap-1.5"
+              aria-label="Merchant status filter"
+            >
+              {[
+                ["all", "All"],
+                ["active", "Active"],
+                ["pending", "Pending"],
+                ["suspended", "Suspended"],
+                ["rejected", "Rejected"],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  type="button"
+                  size="sm"
+                  variant={requestedStatus === value ? "default" : "outline"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => selectStatus(value)}
+                  aria-pressed={requestedStatus === value}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent className="px-0">
-            {error && (
-              <p className="px-6 text-sm text-destructive">
-                Failed to load: {error}
-              </p>
-            )}
+            {error && <p className="px-6 text-sm text-destructive">{error}</p>}
             {loading ? (
               <p className="px-6 text-sm text-muted-foreground">Loading…</p>
-            ) : merchants.length === 0 ? (
+            ) : visibleMerchants.length === 0 ? (
               <p className="px-6 text-sm text-muted-foreground">
-                No merchants yet.
+                No merchants match the current search or status filter.
               </p>
             ) : (
               <ul className="flex flex-col">
-                {merchants.map((m) => {
+                {visibleMerchants.map((m) => {
                   const isSelected = m.id === selectedId;
                   return (
                     <li key={m.id}>
@@ -298,7 +375,7 @@ export function MerchantsPage() {
           {selectedMerchant ? (
             <>
               <Card>
-                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
                   <div>
                     <CardTitle>{selectedMerchant.legalName}</CardTitle>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -306,64 +383,96 @@ export function MerchantsPage() {
                       {selectedMerchant.tin}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <MerchantStatusBadge merchant={selectedMerchant} />
-                    {canEditMerchant && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setEditingMerchant(selectedMerchant);
-                            setMerchantFormMode("edit");
-                          }}
-                        >
-                          <Pencil />
-                          Edit
-                        </Button>
-                        {/* Approve/Enable/Disable toggle is only available to
-                            super-admin — backend refuses the active flip from
-                            anyone else. We mirror that here so merchant
-                            admins don't see a button they can't use. */}
-                        {user?.role === "SUPER_ADMIN" && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleMerchantActive(selectedMerchant)}
-                            >
-                              {selectedMerchant.active ? (
-                                <CircleX />
-                              ) : selectedMerchant.approvedAt === null ? (
-                                <ShieldCheck />
-                              ) : (
-                                <CircleCheck />
-                              )}
-                              {selectedMerchant.active
-                                ? "Disable"
-                                : selectedMerchant.approvedAt === null
-                                  ? "Approve"
-                                  : "Enable"}
-                            </Button>
-                            {/* Reject only meaningful for pending merchants
-                                that haven't been approved or rejected yet.
-                                Approved-then-disabled = use Disable; already
-                                rejected = no-op. */}
-                            {selectedMerchant.approvedAt === null &&
-                              selectedMerchant.rejectedAt === null && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                  onClick={() => setRejecting(selectedMerchant)}
-                                >
-                                  <XOctagon />
-                                  Reject
-                                </Button>
-                              )}
-                          </>
+                    {selectedMerchant.owner && (
+                      <EmailVerificationBadge
+                        verified={Boolean(
+                          selectedMerchant.owner.emailVerifiedAt,
                         )}
-                      </>
+                      />
+                    )}
+                    {(user?.role === "SUPER_ADMIN" || canEditMerchant) && (
+                      <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Actions for ${selectedMerchant.legalName}`}
+                          >
+                            Actions
+                            <ChevronDown className="size-4" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="end"
+                          className="w-56 p-1"
+                          role="menu"
+                          aria-label="Merchant actions"
+                        >
+                          {user?.role === "SUPER_ADMIN" && (
+                            <ActionMenuItem
+                              icon={<Eye />}
+                              label="View registration"
+                              onSelect={() => {
+                                setActionsOpen(false);
+                                navigate(
+                                  `/super-admin/registrations?merchant=${encodeURIComponent(selectedMerchant.id)}`,
+                                );
+                              }}
+                            />
+                          )}
+                          {canEditMerchant && (
+                            <ActionMenuItem
+                              icon={<Pencil />}
+                              label="Edit merchant"
+                              onSelect={() => {
+                                setActionsOpen(false);
+                                setEditingMerchant(selectedMerchant);
+                                setMerchantFormMode("edit");
+                              }}
+                            />
+                          )}
+                          {user?.role === "SUPER_ADMIN" && (
+                            <>
+                              <ActionMenuItem
+                                icon={
+                                  selectedMerchant.active ? (
+                                    <CircleX />
+                                  ) : selectedMerchant.approvedAt === null ? (
+                                    <ShieldCheck />
+                                  ) : (
+                                    <CircleCheck />
+                                  )
+                                }
+                                label={
+                                  selectedMerchant.active
+                                    ? "Disable merchant"
+                                    : selectedMerchant.approvedAt === null
+                                      ? "Approve merchant"
+                                      : "Enable merchant"
+                                }
+                                onSelect={() => {
+                                  setActionsOpen(false);
+                                  void toggleMerchantActive(selectedMerchant);
+                                }}
+                              />
+                              {selectedMerchant.approvedAt === null &&
+                                selectedMerchant.rejectedAt === null && (
+                                  <ActionMenuItem
+                                    destructive
+                                    icon={<XOctagon />}
+                                    label="Reject merchant"
+                                    onSelect={() => {
+                                      setActionsOpen(false);
+                                      setRejecting(selectedMerchant);
+                                    }}
+                                  />
+                                )}
+                            </>
+                          )}
+                        </PopoverContent>
+                      </Popover>
                     )}
                   </div>
                 </CardHeader>
@@ -427,7 +536,9 @@ export function MerchantsPage() {
                       onClick={() =>
                         navigate(
                           `/merchants/${selectedMerchant.id}/branches/new`,
-                          { state: { merchantName: selectedMerchant.legalName } },
+                          {
+                            state: { merchantName: selectedMerchant.legalName },
+                          },
                         )
                       }
                     >
@@ -500,16 +611,32 @@ export function MerchantsPage() {
                             >
                               {canEditBranch && (
                                 <>
-                                  {user?.role === "SUPER_ADMIN" && !b.approvedAt && !b.rejectedAt && (
-                                    <>
-                                      <Button variant="ghost" size="sm" onClick={() => void decideBranch(b, "approve")}>
-                                        <CircleCheck />Approve
-                                      </Button>
-                                      <Button variant="ghost" size="sm" onClick={() => void decideBranch(b, "reject")}>
-                                        <CircleX />Reject
-                                      </Button>
-                                    </>
-                                  )}
+                                  {user?.role === "SUPER_ADMIN" &&
+                                    !b.approvedAt &&
+                                    !b.rejectedAt && (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            void decideBranch(b, "approve")
+                                          }
+                                        >
+                                          <CircleCheck />
+                                          Approve
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            void decideBranch(b, "reject")
+                                          }
+                                        >
+                                          <CircleX />
+                                          Reject
+                                        </Button>
+                                      </>
+                                    )}
                                   {b.approvedAt && (
                                     <Button
                                       variant="ghost"
@@ -555,8 +682,7 @@ export function MerchantsPage() {
           ) : (
             <Card>
               <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                Select a merchant from the list to see its details and
-                branches.
+                Select a merchant from the list to see its details and branches.
               </CardContent>
             </Card>
           )}
@@ -609,9 +735,7 @@ export function MerchantsPage() {
         merchant={rejecting}
         onClose={() => setRejecting(null)}
         onRejected={(m) => {
-          setMerchants((prev) =>
-            prev.map((x) => (x.id === m.id ? m : x)),
-          );
+          setMerchants((prev) => prev.map((x) => (x.id === m.id ? m : x)));
           setRejecting(null);
         }}
       />
@@ -634,9 +758,7 @@ export function MerchantsPage() {
               }
             : undefined
         }
-        onOpenCertificate={
-          canEditBranch ? (b) => setCertBranch(b) : undefined
-        }
+        onOpenCertificate={canEditBranch ? (b) => setCertBranch(b) : undefined}
         canTestEirms={canEditBranch}
       />
     </div>
@@ -673,7 +795,10 @@ function RejectMerchantSheet({
     setBusy(true);
     setError(null);
     try {
-      const updated = await rejectMerchant(merchant.id, reason.trim() || undefined);
+      const updated = await rejectMerchant(
+        merchant.id,
+        reason.trim() || undefined,
+      );
       onRejected(updated);
     } catch (err) {
       setBusy(false);
@@ -707,7 +832,12 @@ function RejectMerchantSheet({
           </div>
         </SheetHeader>
 
-        <form id="reject-merchant" onSubmit={submit} className="contents" noValidate>
+        <form
+          id="reject-merchant"
+          onSubmit={submit}
+          className="contents"
+          noValidate
+        >
           <SheetBody className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs text-muted-foreground">
@@ -797,6 +927,9 @@ function OwnerBlock({ merchant }: { merchant: Merchant }) {
               >
                 {owner.email}
               </a>
+              <EmailVerificationBadge
+                verified={Boolean(owner.emailVerifiedAt)}
+              />
             </dd>
           </div>
           <Detail
@@ -812,6 +945,46 @@ function OwnerBlock({ merchant }: { merchant: Merchant }) {
         </p>
       )}
     </div>
+  );
+}
+
+function EmailVerificationBadge({ verified }: { verified: boolean }) {
+  return verified ? (
+    <Badge className="gap-1 whitespace-nowrap border-emerald-600/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+      <CircleCheck className="size-3" /> Verified
+    </Badge>
+  ) : (
+    <Badge variant="destructive" className="gap-1 whitespace-nowrap">
+      <CircleX className="size-3" /> Not verified
+    </Badge>
+  );
+}
+
+function ActionMenuItem({
+  icon,
+  label,
+  destructive = false,
+  onSelect,
+}: {
+  icon: ReactNode;
+  label: string;
+  destructive?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
+        destructive &&
+          "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10",
+      )}
+    >
+      <span className="[&_svg]:size-4">{icon}</span>
+      {label}
+    </button>
   );
 }
 
@@ -861,7 +1034,10 @@ function CredsBadge({ branch }: { branch: SafeBranch }) {
   }
   if (set === 0) return <Badge variant="muted">Not configured</Badge>;
   return (
-    <Badge variant="outline" className="gap-1 text-amber-700 dark:text-amber-300">
+    <Badge
+      variant="outline"
+      className="gap-1 text-amber-700 dark:text-amber-300"
+    >
       <KeyRound className="size-3" /> {set}/3 set
     </Badge>
   );

@@ -4,29 +4,29 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Inject,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { ConfigType } from '@nestjs/config';
 import bcrypt from 'bcryptjs';
 
 import { AuditService } from '../audit/audit.service';
 import { RequestContextService } from '../audit/request-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TransactionalEmailService } from '../notifications/transactional-email.service';
 import { UsersService } from '../users/users.service';
 import type {
   AuthUser,
   IssuedSession,
   JwtPayload,
+  PendingAuthResponse,
 } from './auth.types';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokensService } from './refresh-tokens.service';
-
-/** Access-token TTL — short on purpose. The pairing refresh token
- *  (RefreshTokensService) is the long-lived credential; the access token is
- *  a 5-minute bearer that's safer to leave in the browser's URL bar /
- *  log lines / memory dumps. */
-const ACCESS_TOKEN_TTL_SECONDS = 5 * 60;
+import { maskEmail, maskPhone, OtpService } from './otp.service';
+import { authVerificationConfig } from './auth-verification.config';
 
 /** Brute-force defense thresholds. After {@link LOCKOUT_THRESHOLD} consecutive
  *  failed sign-in attempts on the same account, the account is locked for
@@ -58,9 +58,15 @@ export class AuthService {
     private readonly context: RequestContextService,
     private readonly refreshTokens: RefreshTokensService,
     private readonly prisma: PrismaService,
+    private readonly otp: OtpService,
+    private readonly transactionalEmail: TransactionalEmailService,
+    @Inject(authVerificationConfig.KEY)
+    private readonly verificationConfig: ConfigType<
+      typeof authVerificationConfig
+    >,
   ) {}
 
-  async login(input: LoginDto): Promise<IssuedSession> {
+  async login(input: LoginDto): Promise<PendingAuthResponse> {
     const email = input.email.toLowerCase().trim();
     const user = await this.users.findByEmail(email);
 
@@ -107,20 +113,59 @@ export class AuthService {
       // message — they only learn the account is locked on their *next*
       // attempt (this is intentional; revealing the lockout state on the
       // attempt that triggers it would be a small information leak).
-      await this.users.recordFailedLogin(
+      const failed = await this.users.recordFailedLogin(
         user.id,
         LOCKOUT_THRESHOLD,
         LOCKOUT_DURATION_MS,
       );
       await this.recordLoginFailure(email, 'wrong_password');
+      if (
+        failed.failedLoginCount ===
+        this.verificationConfig.failedLoginAlertThreshold
+      ) {
+        void this.transactionalEmail.notify({
+          type: 'LOGIN_FAILURE_THRESHOLD',
+          to: user.email,
+          name: user.name,
+          occurredAt: new Date(),
+          attempts: failed.failedLoginCount,
+          ip: this.context.get()?.ip,
+        });
+      }
       throw new UnauthorizedException('Email or password is incorrect.');
     }
 
-    // Success — stamps lastLoginAt and clears the failed-attempt state.
-    await this.users.recordLogin(user.id);
-    await this.recordLoginSuccess(user.id, user.email);
+    if (!user.emailVerifiedAt) {
+      const pendingToken = this.otp.pendingToken(user.id, 'email-verification');
+      let deliveryFailed = false;
+      try {
+        await this.otp.sendEmailVerification(user.id);
+      } catch (err) {
+        // Password authentication succeeded and the account still needs
+        // verification. Keep that state usable even when SMTP is unavailable;
+        // the verification page exposes an explicit resend action.
+        deliveryFailed = true;
+        this.logger.warn(
+          `Initial verification delivery failed for user ${user.id}: ${(err as Error).name}`,
+        );
+      }
+      return {
+        step: 'email-verification',
+        pendingToken,
+        email: maskEmail(user.email),
+        phone: null,
+        deliveryFailed,
+      };
+    }
 
-    return this.issueSession(user);
+    // Password success deliberately does not mint access or refresh tokens.
+    // The pending token is purpose-bound and accepted only by /auth/2fa/*.
+    return {
+      step: 'two-factor',
+      pendingToken: this.otp.pendingToken(user.id, 'login-2fa'),
+      email: maskEmail(user.email),
+      phone: user.phone ? maskPhone(user.phone) : null,
+    };
   }
 
   /**
@@ -134,7 +179,7 @@ export class AuthService {
   async refresh(rawToken: string): Promise<IssuedSession> {
     const { token, user } =
       await this.refreshTokens.consumeForRotation(rawToken);
-    if (!user.active) {
+    if (!user.active || !user.emailVerifiedAt) {
       // Disabled mid-session — purge sessions and refuse.
       await this.refreshTokens.revokeAll(user.id);
       throw new ForbiddenException('This account has been disabled.');
@@ -153,6 +198,20 @@ export class AuthService {
     await this.refreshTokens.revokeByRawToken(rawToken);
   }
 
+  async completeLogin(userId: string, email: string): Promise<void> {
+    const user = await this.users.recordLogin(userId);
+    await this.recordLoginSuccess(userId, email);
+    const request = this.context.get();
+    void this.transactionalEmail.notify({
+      type: 'LOGIN_SUCCEEDED',
+      to: user.email,
+      name: user.name,
+      occurredAt: new Date(),
+      ip: request?.ip,
+      userAgent: request?.userAgent,
+    });
+  }
+
   /** Internal — build the JWT + a fresh refresh token + the LoginResponse
    *  envelope. Used by both login and refresh paths. */
   async issueSession(user: {
@@ -163,7 +222,11 @@ export class AuthService {
     merchantId: string | null;
     branchId: string | null;
     language: string;
+    emailVerifiedAt?: Date | null;
   }): Promise<IssuedSession> {
+    if (!user.emailVerifiedAt) {
+      throw new ForbiddenException('Email verification is required.');
+    }
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -172,12 +235,12 @@ export class AuthService {
       branchId: user.branchId,
     };
     const accessToken = this.jwt.sign(payload, {
-      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      expiresIn: this.verificationConfig.accessTokenTtlSeconds,
     });
     const refresh = await this.refreshTokens.issue(user.id);
     return {
       token: accessToken,
-      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      expiresIn: this.verificationConfig.accessTokenTtlSeconds,
       refreshToken: refresh.token,
       refreshExpiresAt: refresh.expiresAt,
       user: {
@@ -194,7 +257,7 @@ export class AuthService {
 
   async me(payload: JwtPayload): Promise<AuthUser> {
     const user = await this.users.findById(payload.sub);
-    if (!user || !user.active) {
+    if (!user || !user.active || !user.emailVerifiedAt) {
       throw new UnauthorizedException('Session is no longer valid.');
     }
     return {
@@ -246,7 +309,9 @@ export class AuthService {
         entityId: null,
         success: false,
         statusCode:
-          reason === 'locked' ? HttpStatus.TOO_MANY_REQUESTS : HttpStatus.UNAUTHORIZED,
+          reason === 'locked'
+            ? HttpStatus.TOO_MANY_REQUESTS
+            : HttpStatus.UNAUTHORIZED,
         errorMessage: reason,
         actor: {
           // Stuff the attempted email into the actor slot so the audit page's

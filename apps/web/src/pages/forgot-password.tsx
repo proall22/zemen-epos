@@ -48,8 +48,8 @@ export function ForgotPasswordPage() {
         title:
           err instanceof ApiError
             ? (readApiMessage(err.body) ??
-              "We couldn't process your request right now.")
-            : "Couldn't reach the server. Check your connection.",
+              "Unable to process the request. Try again.")
+            : "Unable to connect. Check your connection and try again.",
         items: [],
       });
     }

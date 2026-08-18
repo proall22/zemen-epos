@@ -31,6 +31,7 @@ import { VendorsModule } from './vendors/vendors.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { notificationsValidationSchema } from './notifications/notifications.config';
 import { NotificationsModule } from './notifications/notifications.module';
+import { TransactionalEmailModule } from './notifications/transactional-email.module';
 import { metricsValidationSchema } from './observability/metrics.config';
 import { ObservabilityModule } from './observability/observability.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -39,6 +40,7 @@ import { BullSetupModule } from './common/bull-setup.module';
 import { IpFilterModule } from './security/ip-filter/ip-filter.module';
 import { AppThrottlerModule } from './security/throttler.module';
 import { turnstileValidationSchema } from './security/turnstile/turnstile.config';
+import { authVerificationValidationSchema } from './auth/auth-verification.config';
 import { TurnstileModule } from './security/turnstile/turnstile.module';
 import { SignupModule } from './signup/signup.module';
 import { StatusModule } from './status/status.module';
@@ -59,6 +61,7 @@ import { VaultModule } from './vault/vault.module';
         ...exportsValidationSchema,
         ...reportsValidationSchema,
         ...turnstileValidationSchema,
+        ...authVerificationValidationSchema,
         DATABASE_URL: Joi.string().uri().required(),
         REDIS_URL: Joi.string().optional().allow(''),
         // Offline invoice drafts — parked. Off means the endpoints 404, the
@@ -75,6 +78,9 @@ import { VaultModule } from './vault/vault.module';
         // (e.g. SPA on a separate origin needs `none` + `true`).
         COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').optional(),
         COOKIE_SECURE: Joi.string().valid('true', 'false').optional(),
+        COOKIE_PATH: Joi.string()
+          .pattern(/^\/[A-Za-z0-9/_-]*$/)
+          .optional(),
         // Optional durable spill path for OUTBOUND/INBOUND audit rows that
         // can't reach the DB. Unset = no fallback (rows logged + lost on DB
         // failure, current behaviour); set = appended as JSONL for later
@@ -96,6 +102,7 @@ import { VaultModule } from './vault/vault.module';
       validationOptions: { abortEarly: false },
     }),
     PrismaModule,
+    TransactionalEmailModule,
     // Region filter — must be first so blocked IPs get a fast 451 without
     // hitting the throttler / auth / audit pipeline.
     IpFilterModule,

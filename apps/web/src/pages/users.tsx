@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
+import { readRequestError } from "@/lib/api-errors";
 import { listBranches, listMerchants, listUsers, unlockUser, updateUser } from "@/lib/resources";
 import { ROLE_LABELS, type ManagedUser, type Merchant, type SafeBranch, type UserRole } from "@/lib/types";
 
@@ -107,7 +108,7 @@ export function UsersPage() {
       setUsers(result.items);
       setTotal(result.total);
     } catch (e) {
-      setError((e as Error).message);
+      setError(readRequestError(e, "Unable to load user information."));
     } finally {
       setLoading(false);
     }
@@ -275,9 +276,7 @@ export function UsersPage() {
                       <TableCell className="font-medium">{u.email}</TableCell>
                       <TableCell>{u.name ?? "—"}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant={isSuperAdmin ? "default" : "secondary"}
-                        >
+                        <Badge variant={isSuperAdmin ? "default" : "secondary"}>
                           {ROLE_LABELS[u.role]}
                         </Badge>
                       </TableCell>

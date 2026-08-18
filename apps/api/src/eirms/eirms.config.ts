@@ -70,10 +70,25 @@ export const eirmsValidationSchema = {
       return value;
     }, 'production HTTPS enforcement'),
   EIRMS_CLIENT_ID: Joi.string().uuid().required(),
-  EIRMS_CLIENT_SECRET: Joi.string().required(),
+  // Legacy env credentials only seed the default branch when explicitly
+  // enabled. Normal deployments keep per-branch credentials in Vault, so
+  // blank legacy values must not prevent the API from booting.
+  EIRMS_CLIENT_SECRET: Joi.string().when('EIRMS_SEED_DEFAULT_CREDENTIALS', {
+    is: 'true',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  }),
   EIRMS_API_KEY: Joi.string().uuid().required(),
-  EIRMS_TIN: Joi.string().required(),
-  EIRMS_SYSTEM_NUMBER: Joi.string().trim().min(3).max(64).required(),
+  EIRMS_TIN: Joi.string().when('EIRMS_SEED_DEFAULT_CREDENTIALS', {
+    is: 'true',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  }),
+  EIRMS_SYSTEM_NUMBER: Joi.string().trim().min(3).max(64).when('EIRMS_SEED_DEFAULT_CREDENTIALS', {
+    is: 'true',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  }),
   EIRMS_SYSTEM_TYPE: Joi.string().valid('POS').default('POS'),
   EIRMS_SEED_DEFAULT_CREDENTIALS: Joi.string()
     .valid('true', 'false')
@@ -90,7 +105,7 @@ export const eirmsValidationSchema = {
   EIRMS_SIGNING_CERT_FILE: Joi.string().optional().allow(''),
   // Certificate-onboarding email target. Defaults to INSA's published address;
   // override in staging when INSA runs a rehearsal inbox.
-  EIRMS_CERTIFICATE_EMAIL: Joi.string().email().optional(),
+  EIRMS_CERTIFICATE_EMAIL: Joi.string().email().optional().allow(''),
   JWT_SECRET: Joi.string().min(16).required(),
 };
 

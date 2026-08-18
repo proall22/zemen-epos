@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,13 +8,23 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, type Branch, type Merchant } from '@prisma/client';
+import {
+  LegalDocumentStatus,
+  Prisma,
+  type Branch,
+  type Merchant,
+} from '@prisma/client';
+import { readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { RequestContextService } from '../audit/request-context.service';
 import { CertificatesService } from '../certificates/certificates.service';
 import { EirmsSigningService } from '../eirms/eirms-signing.service';
 import { EirmsAuthService } from '../eirms/eirms-auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TransactionalEmailService } from '../notifications/transactional-email.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultService } from '../vault/vault.service';
 import { CreateBranchDto } from './dto/create-branch.dto';
@@ -33,6 +44,7 @@ const BOOTSTRAP_SENTINEL = '__BOOTSTRAP__';
 export interface MerchantOwner {
   name: string | null;
   email: string;
+  emailVerifiedAt: string | null;
   active: boolean;
   createdAt: string;
   lastLoginAt: string | null;
@@ -57,6 +69,34 @@ export interface PendingBranchReview {
   createdAt: string;
 }
 
+export interface RegistrationReview {
+  merchantId: string;
+  merchantName: string;
+  tin: string;
+  phone: string | null;
+  registeredAt: string;
+  applicant: {
+    id: string;
+    name: string | null;
+    email: string;
+    emailVerifiedAt: string | null;
+    phone: string | null;
+    phoneVerifiedAt: string | null;
+  };
+  document: {
+    id: string;
+    originalName: string;
+    mediaType: string;
+    sizeBytes: number;
+    status: LegalDocumentStatus;
+    uploadedAt: string;
+    reviewedBy: string | null;
+    reviewer: { name: string | null; email: string } | null;
+    reviewedAt: string | null;
+    rejectionReason: string | null;
+  };
+}
+
 @Injectable()
 export class MerchantsService implements OnModuleInit {
   private readonly logger = new Logger(MerchantsService.name);
@@ -66,6 +106,7 @@ export class MerchantsService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly context: RequestContextService,
     private readonly notifications: NotificationsService,
+    private readonly transactionalEmail: TransactionalEmailService,
     private readonly vault: VaultService,
     private readonly certificates: CertificatesService,
     private readonly signing: EirmsSigningService,
@@ -154,11 +195,11 @@ export class MerchantsService implements OnModuleInit {
         data: { systemNumber },
       }),
     ]);
-    await this.vault.writeBranchCreds(
-      DEFAULT_MERCHANT_ID,
-      DEFAULT_BRANCH_ID,
-      { clientId, clientSecret, apikey },
-    );
+    await this.vault.writeBranchCreds(DEFAULT_MERCHANT_ID, DEFAULT_BRANCH_ID, {
+      clientId,
+      clientSecret,
+      apikey,
+    });
     this.logger.log(
       `Seeded configured EIRMS identity and Vault credentials for ${DEFAULT_MERCHANT_ID}/${DEFAULT_BRANCH_ID}.`,
     );
@@ -351,6 +392,218 @@ export class MerchantsService implements OnModuleInit {
     return enriched;
   }
 
+  async listRegistrationReviews(
+    status?: LegalDocumentStatus,
+  ): Promise<RegistrationReview[]> {
+    this.assertBackOfficeReviewer();
+    if (status && !Object.values(LegalDocumentStatus).includes(status)) {
+      throw new BadRequestException('Invalid legal document status.');
+    }
+    const documents = await this.prisma.merchantLegalDocument.findMany({
+      where: status ? { status } : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        merchant: {
+          select: { legalName: true, tin: true, phone: true, createdAt: true },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            emailVerifiedAt: true,
+            phone: true,
+            phoneVerifiedAt: true,
+          },
+        },
+        reviewer: { select: { name: true, email: true } },
+      },
+    });
+    return documents.map((d) => this.toRegistrationReview(d));
+  }
+
+  async getRegistrationReview(merchantId: string): Promise<RegistrationReview> {
+    const ctx = this.context.get();
+    if (ctx?.actorRole !== 'SUPER_ADMIN' && ctx?.merchantId !== merchantId) {
+      throw new ForbiddenException('You cannot view this registration.');
+    }
+    const document = await this.prisma.merchantLegalDocument.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        merchant: {
+          select: { legalName: true, tin: true, phone: true, createdAt: true },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            emailVerifiedAt: true,
+            phone: true,
+            phoneVerifiedAt: true,
+          },
+        },
+        reviewer: { select: { name: true, email: true } },
+      },
+    });
+    if (!document)
+      throw new NotFoundException('Registration document not found.');
+    return this.toRegistrationReview(document);
+  }
+
+  async openRegistrationDocument(merchantId: string): Promise<{
+    bytes: Buffer;
+    mediaType: string;
+    filename: string;
+  }> {
+    this.assertBackOfficeReviewer();
+    const document = await this.prisma.merchantLegalDocument.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!document)
+      throw new NotFoundException('Registration document not found.');
+    // storageKey is server-generated and unique. basename is a second
+    // fail-closed boundary in case a database row is ever corrupted.
+    if (basename(document.storageKey) !== document.storageKey) {
+      throw new NotFoundException('Registration document not found.');
+    }
+    const directory = this.config.get<string>(
+      'authVerification.legalDocumentDirectory',
+      '/var/lib/zemen/legal-documents',
+    );
+    const bytes = await readFile(join(directory, document.storageKey)).catch(
+      () => {
+        throw new NotFoundException(
+          'Registration document file is unavailable.',
+        );
+      },
+    );
+    return {
+      bytes,
+      mediaType: document.mediaType,
+      filename: basename(document.originalName),
+    };
+  }
+
+  async replaceRejectedRegistrationDocument(
+    merchantId: string,
+    file: { buffer: Buffer; originalname: string; size: number },
+  ): Promise<RegistrationReview> {
+    const ctx = this.context.get();
+    if (
+      !ctx?.actorId ||
+      ctx.merchantId !== merchantId ||
+      ctx.actorRole !== 'MERCHANT_ADMIN'
+    ) {
+      throw new ForbiddenException(
+        'Only the merchant owner can replace this document.',
+      );
+    }
+    const latest = await this.prisma.merchantLegalDocument.findFirst({
+      where: { merchantId },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true },
+    });
+    if (!latest || latest.status !== 'REJECTED') {
+      throw new ConflictException(
+        'A replacement is allowed only after document rejection.',
+      );
+    }
+    const validated = this.validateLegalDocument(file);
+    const directory = this.config.get<string>(
+      'authVerification.legalDocumentDirectory',
+      '/var/lib/zemen/legal-documents',
+    );
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const storageKey = `${randomUUID()}${validated.extension}`;
+    await writeFile(join(directory, storageKey), file.buffer, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    await this.prisma.merchantLegalDocument.create({
+      data: {
+        merchantId,
+        userId: ctx.actorId,
+        storageKey,
+        originalName:
+          basename(file.originalname)
+            .normalize('NFKC')
+            .replace(/[^a-zA-Z0-9._ -]/g, '_')
+            .slice(0, 180) || 'document',
+        mediaType: validated.mediaType,
+        sizeBytes: file.size,
+        sha256: createHash('sha256').update(file.buffer).digest('hex'),
+      },
+    });
+    return this.getRegistrationReview(merchantId);
+  }
+
+  private validateLegalDocument(file: { buffer: Buffer; size: number }): {
+    extension: string;
+    mediaType: string;
+  } {
+    const maxBytes = this.config.get<number>(
+      'authVerification.legalDocumentMaxBytes',
+      5 * 1024 * 1024,
+    );
+    if (!file.buffer.length || file.size > maxBytes) {
+      throw new BadRequestException(
+        'Legal document must be no larger than 5 MB.',
+      );
+    }
+    const b = file.buffer;
+    if (b.subarray(0, 5).toString() === '%PDF-')
+      return { extension: '.pdf', mediaType: 'application/pdf' };
+    if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff)
+      return { extension: '.jpg', mediaType: 'image/jpeg' };
+    if (
+      b
+        .subarray(0, 8)
+        .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    )
+      return { extension: '.png', mediaType: 'image/png' };
+    throw new BadRequestException(
+      'Legal document must be a genuine PDF, JPEG, or PNG file.',
+    );
+  }
+
+  private assertBackOfficeReviewer(): void {
+    if (this.context.get()?.actorRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        'Only the back-office can review registrations.',
+      );
+    }
+  }
+
+  private toRegistrationReview(d: any): RegistrationReview {
+    return {
+      merchantId: d.merchantId,
+      merchantName: d.merchant.legalName,
+      tin: d.merchant.tin,
+      phone: d.merchant.phone,
+      registeredAt: d.merchant.createdAt.toISOString(),
+      applicant: {
+        ...d.user,
+        emailVerifiedAt: d.user.emailVerifiedAt?.toISOString() ?? null,
+        phoneVerifiedAt: d.user.phoneVerifiedAt?.toISOString() ?? null,
+      },
+      document: {
+        id: d.id,
+        originalName: d.originalName,
+        mediaType: d.mediaType,
+        sizeBytes: d.sizeBytes,
+        status: d.status,
+        uploadedAt: d.createdAt.toISOString(),
+        reviewedBy: d.reviewedBy,
+        reviewer: d.reviewer,
+        reviewedAt: d.reviewedAt?.toISOString() ?? null,
+        rejectionReason: d.rejectionReason,
+      },
+    };
+  }
+
   /**
    * Attach each merchant's owner (earliest MERCHANT_ADMIN) + admin count, so
    * the super-admin's Merchant Management view can vet the person behind a
@@ -368,6 +621,7 @@ export class MerchantsService implements OnModuleInit {
         merchantId: true,
         name: true,
         email: true,
+        emailVerifiedAt: true,
         active: true,
         createdAt: true,
         lastLoginAt: true,
@@ -382,6 +636,9 @@ export class MerchantsService implements OnModuleInit {
         ownerByMerchant.set(a.merchantId, {
           name: a.name,
           email: a.email,
+          emailVerifiedAt: a.emailVerifiedAt
+            ? a.emailVerifiedAt.toISOString()
+            : null,
           active: a.active,
           createdAt: a.createdAt.toISOString(),
           lastLoginAt: a.lastLoginAt ? a.lastLoginAt.toISOString() : null,
@@ -398,7 +655,7 @@ export class MerchantsService implements OnModuleInit {
   async create(input: CreateMerchantDto): Promise<Merchant> {
     const ctx = this.context.get();
     try {
-      return await this.prisma.merchant.create({
+      const created = await this.prisma.merchant.create({
         data: {
           legalName: input.legalName.trim(),
           tradeName: input.tradeName?.trim() || null,
@@ -419,6 +676,14 @@ export class MerchantsService implements OnModuleInit {
           approvedBy: ctx?.actorId ?? null,
         },
       });
+      if (created.email) {
+        void this.transactionalEmail.notify({
+          type: 'MERCHANT_CREATED',
+          to: created.email,
+          merchantName: created.legalName,
+        });
+      }
+      return created;
     } catch (err) {
       // TIN is the only global unique on merchants — turn the raw P2002 into
       // a 409 that says exactly which constraint tripped.
@@ -446,6 +711,19 @@ export class MerchantsService implements OnModuleInit {
     // still want to know they were once approved).
     const isFirstApproval =
       activeOverride === true && existing.approvedAt === null;
+    if (isFirstApproval) {
+      const pendingDocument = await this.prisma.merchantLegalDocument.findFirst(
+        {
+          where: { merchantId: id, status: 'PENDING' },
+          select: { id: true },
+        },
+      );
+      if (!pendingDocument) {
+        throw new ConflictException(
+          'A pending legal registration document is required before approval.',
+        );
+      }
+    }
     // Enable / disable transitions on an already-approved merchant. Distinct
     // from first-approval (which has its own email + approvedAt stamp).
     const isEnable =
@@ -512,6 +790,15 @@ export class MerchantsService implements OnModuleInit {
         },
       });
       if (isFirstApproval) {
+        await this.prisma.merchantLegalDocument.updateMany({
+          where: { merchantId: updated.id, status: 'PENDING' },
+          data: {
+            status: 'APPROVED',
+            reviewedAt: new Date(),
+            reviewedBy: ctx?.actorId ?? null,
+            rejectionReason: null,
+          },
+        });
         // The branch submitted with self-registration is part of the same
         // review decision as the merchant. This also safely covers any old
         // pending signup rows created before branch approval was introduced.
@@ -541,6 +828,16 @@ export class MerchantsService implements OnModuleInit {
           action: 'merchant.approved',
           merchantId: updated.id,
         });
+        const recipient = existing.owner?.email ?? updated.email;
+        if (recipient) {
+          void this.transactionalEmail.notify({
+            type: 'REGISTRATION_APPROVED',
+            to: recipient,
+            name: existing.owner?.name ?? null,
+            merchantName: updated.legalName,
+            occurredAt: new Date(),
+          });
+        }
       } else if (isEnable) {
         void this.notifications.enqueue({
           action: 'merchant.enabled',
@@ -551,6 +848,18 @@ export class MerchantsService implements OnModuleInit {
           action: 'merchant.disabled',
           merchantId: updated.id,
         });
+      }
+      if (isSuperAdmin && !isFirstApproval) {
+        const changedFields = merchantChangedFields(existing, input);
+        const recipient = existing.owner?.email ?? updated.email;
+        if (recipient && changedFields.length > 0) {
+          void this.transactionalEmail.notify({
+            type: 'ACCOUNT_UPDATED',
+            to: recipient,
+            name: existing.owner?.name ?? null,
+            changedFields,
+          });
+        }
       }
       return updated;
     } catch (err) {
@@ -592,7 +901,16 @@ export class MerchantsService implements OnModuleInit {
         active: false,
         rejectedAt: new Date(),
         rejectedBy: ctx?.actorId ?? null,
-        rejectionReason: input.reason?.trim() || null,
+        rejectionReason: input.reason.trim(),
+      },
+    });
+    await this.prisma.merchantLegalDocument.updateMany({
+      where: { merchantId: updated.id, status: 'PENDING' },
+      data: {
+        status: 'REJECTED',
+        reviewedAt: new Date(),
+        reviewedBy: ctx?.actorId ?? null,
+        rejectionReason: input.reason.trim(),
       },
     });
     void this.notifications.enqueue({
@@ -607,7 +925,9 @@ export class MerchantsService implements OnModuleInit {
   async listPendingBranchReviews(): Promise<PendingBranchReview[]> {
     const ctx = this.context.get();
     if (ctx?.actorRole !== 'SUPER_ADMIN') {
-      throw new ForbiddenException('Only the back-office can review pending branches.');
+      throw new ForbiddenException(
+        'Only the back-office can review pending branches.',
+      );
     }
     const rows = await this.prisma.branch.findMany({
       where: {
@@ -682,7 +1002,10 @@ export class MerchantsService implements OnModuleInit {
 
   /** Idempotent: creates the branch's `Main` sales-floor store if it has none.
    *  Safe to call on an existing branch. */
-  async ensureDefaultStore(merchantId: string, branchId: string): Promise<void> {
+  async ensureDefaultStore(
+    merchantId: string,
+    branchId: string,
+  ): Promise<void> {
     const existing = await this.prisma.store.findFirst({
       where: { branchId },
       select: { id: true },
@@ -778,11 +1101,16 @@ export class MerchantsService implements OnModuleInit {
   async approveBranch(merchantId: string, branchId: string): Promise<Branch> {
     const ctx = this.context.get();
     if (ctx?.actorRole !== 'SUPER_ADMIN') {
-      throw new ForbiddenException('Only the back-office can approve branches.');
+      throw new ForbiddenException(
+        'Only the back-office can approve branches.',
+      );
     }
-    const branch = await this.prisma.branch.findFirst({ where: { id: branchId, merchantId } });
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, merchantId },
+    });
     if (!branch) throw new NotFoundException(`Branch ${branchId} not found.`);
-    if (branch.approvedAt) throw new ConflictException('This branch is already approved.');
+    if (branch.approvedAt)
+      throw new ConflictException('This branch is already approved.');
     const updated = await this.prisma.branch.update({
       where: { id: branchId },
       data: {
@@ -794,21 +1122,35 @@ export class MerchantsService implements OnModuleInit {
         rejectionReason: null,
       },
     });
-    void this.certificates.provisionForBranch(merchantId, branchId).catch((err: Error) =>
-      this.logger.error(`Post-branch-approval cert provisioning failed for ${merchantId}/${branchId}: ${err.message}`),
-    );
+    void this.certificates
+      .provisionForBranch(merchantId, branchId)
+      .catch((err: Error) =>
+        this.logger.error(
+          `Post-branch-approval cert provisioning failed for ${merchantId}/${branchId}: ${err.message}`,
+        ),
+      );
     return updated;
   }
 
-  async rejectBranch(merchantId: string, branchId: string, input: RejectMerchantDto): Promise<Branch> {
+  async rejectBranch(
+    merchantId: string,
+    branchId: string,
+    input: RejectMerchantDto,
+  ): Promise<Branch> {
     const ctx = this.context.get();
     if (ctx?.actorRole !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Only the back-office can reject branches.');
     }
-    const branch = await this.prisma.branch.findFirst({ where: { id: branchId, merchantId } });
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, merchantId },
+    });
     if (!branch) throw new NotFoundException(`Branch ${branchId} not found.`);
-    if (branch.approvedAt) throw new ConflictException('This branch was already approved. Disable it instead.');
-    if (branch.rejectedAt) throw new ConflictException('This branch is already rejected.');
+    if (branch.approvedAt)
+      throw new ConflictException(
+        'This branch was already approved. Disable it instead.',
+      );
+    if (branch.rejectedAt)
+      throw new ConflictException('This branch is already rejected.');
     return this.prisma.branch.update({
       where: { id: branchId },
       data: {
@@ -1034,4 +1376,33 @@ export class MerchantsService implements OnModuleInit {
       );
     }
   }
+}
+
+function merchantChangedFields(
+  existing: MerchantWithOwner,
+  input: UpdateMerchantDto,
+): string[] {
+  const fields: Array<[keyof UpdateMerchantDto, keyof Merchant, string]> = [
+    ['legalName', 'legalName', 'Business name'],
+    ['tradeName', 'tradeName', 'Trade name'],
+    ['tin', 'tin', 'TIN'],
+    ['email', 'email', 'Business email'],
+    ['phone', 'phone', 'Phone number'],
+    ['vatNumber', 'vatNumber', 'VAT number'],
+    ['city', 'city', 'City'],
+    ['region', 'region', 'Region'],
+    ['zone', 'zone', 'Zone'],
+    ['wereda', 'wereda', 'Wereda'],
+    ['kebele', 'kebele', 'Kebele'],
+    ['houseNumber', 'houseNumber', 'House number'],
+  ];
+  return fields
+    .filter(([inputKey, modelKey]) => {
+      const value = input[inputKey];
+      if (value === undefined) return false;
+      const normalized =
+        typeof value === 'string' ? value.trim() || null : value;
+      return normalized !== existing[modelKey];
+    })
+    .map(([, , label]) => label);
 }

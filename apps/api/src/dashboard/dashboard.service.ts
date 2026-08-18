@@ -26,7 +26,11 @@ export interface SystemSummary {
     rejected: number;
     suspended: number;
   };
-  tenants: { totalBranches: number; activeBranches: number; activeUsers: number };
+  tenants: {
+    totalBranches: number;
+    activeBranches: number;
+    activeUsers: number;
+  };
   documents: {
     invoicesToday: number;
     invoicesThisMonth: number;
@@ -39,6 +43,13 @@ export interface SystemSummary {
     pendingInvoices: number;
     cancelledInvoices: number;
   };
+  registrationReviews: {
+    pending: number;
+    emailVerified: number;
+    emailNotVerified: number;
+    approved: number;
+    rejected: number;
+  };
   pendingMerchantList: Array<{
     id: string;
     legalName: string;
@@ -47,7 +58,12 @@ export interface SystemSummary {
     createdAt: string;
     ownerEmail: string | null;
     ownerName: string | null;
-    mainBranch: { id: string; name: string; city: string | null; region: string | null } | null;
+    mainBranch: {
+      id: string;
+      name: string;
+      city: string | null;
+      region: string | null;
+    } | null;
   }>;
   recentAuditLogs: Array<{
     id: string;
@@ -263,24 +279,34 @@ export class DashboardService {
       _sum: { quantity: true },
     });
     const lowStockItemIds = stockAgg
-      .filter(s => s._sum.quantity !== null)
-      .map(s => ({ id: s.inventoryItemId, onHand: s._sum.quantity! }));
+      .filter((s) => s._sum.quantity !== null)
+      .map((s) => ({ id: s.inventoryItemId, onHand: s._sum.quantity! }));
     const lowStockItems = lowStockItemIds.length
       ? await this.prisma.inventoryItem.findMany({
           where: {
-            id: { in: lowStockItemIds.map(s => s.id) },
+            id: { in: lowStockItemIds.map((s) => s.id) },
             lowStockThreshold: { not: null },
             ...merchantOnly,
           },
-          select: { id: true, code: true, description: true, lowStockThreshold: true },
+          select: {
+            id: true,
+            code: true,
+            description: true,
+            lowStockThreshold: true,
+          },
         })
       : [];
     const inventoryAlerts = lowStockItems
-      .map(item => {
-        const stock = lowStockItemIds.find(s => s.id === item.id);
-        return { code: item.code, description: item.description, onHand: stock?.onHand ?? 0, lowStockThreshold: item.lowStockThreshold! };
+      .map((item) => {
+        const stock = lowStockItemIds.find((s) => s.id === item.id);
+        return {
+          code: item.code,
+          description: item.description,
+          onHand: stock?.onHand ?? 0,
+          lowStockThreshold: item.lowStockThreshold!,
+        };
       })
-      .filter(item => item.onHand <= item.lowStockThreshold);
+      .filter((item) => item.onHand <= item.lowStockThreshold);
 
     const branches = await this.prisma.branch.findMany({
       where: {
@@ -290,12 +316,18 @@ export class DashboardService {
       },
     });
     // A branch is EIRMS-configured when eirmsApikey, eirmsClientId and eirmsClientSecret are set.
-    const configured = branches.some(b => !!b.eirmsApikey && !!b.eirmsClientId && !!b.eirmsClientSecret);
-    
+    const configured = branches.some(
+      (b) => !!b.eirmsApikey && !!b.eirmsClientId && !!b.eirmsClientSecret,
+    );
+
     const [invoicesRegistered, pending, failed] = await Promise.all([
       this.prisma.invoice.count({ where: { ...scope, status: 'ACCEPTED' } }),
-      this.prisma.invoiceDraft.count({ where: { ...scope, status: 'PENDING' } }),
-      this.prisma.invoiceDraft.count({ where: { ...scope, status: 'SYNC_FAILED' } }),
+      this.prisma.invoiceDraft.count({
+        where: { ...scope, status: 'PENDING' },
+      }),
+      this.prisma.invoiceDraft.count({
+        where: { ...scope, status: 'SYNC_FAILED' },
+      }),
     ]);
     const eirmsCompliance = {
       configured,
@@ -349,7 +381,9 @@ export class DashboardService {
     };
   }
 
-  async cashierSummary(opts?: { crossBranch?: boolean }): Promise<CashierSummary> {
+  async cashierSummary(opts?: {
+    crossBranch?: boolean;
+  }): Promise<CashierSummary> {
     const now = new Date();
     const startOfToday = startOfDay(now);
     const scope = listScope(this.context.get(), opts);
@@ -365,13 +399,15 @@ export class DashboardService {
 
     let sales = 0;
     let itemsSold = 0;
-    invoices.forEach(inv => {
+    invoices.forEach((inv) => {
       sales += inv.totalValue;
       itemsSold += inv.items.reduce((sum, item) => sum + item.quantity, 0);
     });
 
-    let cash = 0, credit = 0, advance = 0;
-    receipts.forEach(r => {
+    let cash = 0,
+      credit = 0,
+      advance = 0;
+    receipts.forEach((r) => {
       if (r.modeOfPayment === 'CASH') cash += r.collectedAmount;
       else if (r.modeOfPayment === 'CREDIT') credit += r.collectedAmount;
       else advance += r.collectedAmount;
@@ -410,9 +446,11 @@ export class DashboardService {
     };
   }
 
-  async accountantSummary(opts?: { crossBranch?: boolean }): Promise<AccountantSummary> {
+  async accountantSummary(opts?: {
+    crossBranch?: boolean;
+  }): Promise<AccountantSummary> {
     const scope = listScope(this.context.get(), opts);
-    
+
     const [invoiceAgg, receiptAgg, withholdAgg] = await Promise.all([
       this.prisma.invoice.aggregate({
         where: { status: 'ACCEPTED', ...scope },
@@ -427,11 +465,11 @@ export class DashboardService {
         _sum: { collectedAmount: true },
       }),
     ]);
-    
+
     const invoiced = invoiceAgg._sum.totalValue ?? 0;
     const collected = receiptAgg._sum.collectedAmount ?? 0;
     const outstanding = Math.max(0, invoiced - collected);
-    
+
     const recentReceipts = await this.prisma.receipt.findMany({
       where: { ...scope },
       take: 8,
@@ -439,7 +477,11 @@ export class DashboardService {
     });
 
     const outstandingInvoices = await this.prisma.invoice.findMany({
-      where: { status: 'ACCEPTED', paymentStatus: { in: ['UNPAID', 'PARTIAL'] }, ...scope },
+      where: {
+        status: 'ACCEPTED',
+        paymentStatus: { in: ['UNPAID', 'PARTIAL'] },
+        ...scope,
+      },
       take: 8,
       orderBy: { createdAt: 'desc' },
       include: { buyer: { select: { legalName: true } } },
@@ -450,7 +492,7 @@ export class DashboardService {
       collected,
       outstanding,
       withholding: withholdAgg._sum.collectedAmount ?? 0,
-      recentReceipts: recentReceipts.map(r => ({
+      recentReceipts: recentReceipts.map((r) => ({
         id: r.id,
         receiptNumber: r.receiptNumber,
         receiptCounter: r.receiptCounter,
@@ -460,7 +502,7 @@ export class DashboardService {
         modeOfPayment: r.modeOfPayment,
         createdAt: r.createdAt.toISOString(),
       })),
-      outstandingInvoices: outstandingInvoices.map(inv => ({
+      outstandingInvoices: outstandingInvoices.map((inv) => ({
         id: inv.id,
         documentNumber: inv.documentNumber,
         buyerLegalName: inv.buyer.legalName,
@@ -499,6 +541,10 @@ export class DashboardService {
       topMerchantsRaw,
       pendingMerchantListRaw,
       recentAuditLogsRaw,
+      pendingRegistrationDocuments,
+      pendingEmailVerified,
+      approvedRegistrationDocuments,
+      rejectedRegistrationDocuments,
     ] = await Promise.all([
       this.prisma.merchant.count(),
       this.prisma.merchant.count({ where: { active: true } }),
@@ -506,9 +552,13 @@ export class DashboardService {
         where: { approvedAt: null, rejectedAt: null },
       }),
       this.prisma.merchant.count({ where: { rejectedAt: { not: null } } }),
-      this.prisma.merchant.count({ where: { approvedAt: { not: null }, active: false } }),
+      this.prisma.merchant.count({
+        where: { approvedAt: { not: null }, active: false },
+      }),
       this.prisma.branch.count(),
-      this.prisma.branch.count({ where: { active: true, approvedAt: { not: null } } }),
+      this.prisma.branch.count({
+        where: { active: true, approvedAt: { not: null } },
+      }),
       this.prisma.user.count({ where: { active: true } }),
       this.prisma.invoice.count({
         where: { status: 'ACCEPTED', createdAt: { gte: startOfToday } },
@@ -518,9 +568,13 @@ export class DashboardService {
       }),
       this.prisma.invoice.count({ where: { status: 'ACCEPTED' } }),
       this.prisma.receipt.count(),
-      this.prisma.receipt.count({ where: { createdAt: { gte: startOfToday } } }),
+      this.prisma.receipt.count({
+        where: { createdAt: { gte: startOfToday } },
+      }),
       // Invoices that have been submitted but MoR rejected or errored
-      this.prisma.invoice.count({ where: { eirmsStatus: { in: ['FAILED', 'ERROR'] } } }),
+      this.prisma.invoice.count({
+        where: { eirmsStatus: { in: ['FAILED', 'ERROR'] } },
+      }),
       this.prisma.invoice.count({ where: { status: 'CANCELLED' } }),
       this.prisma.invoice.groupBy({
         by: ['merchantId'],
@@ -566,6 +620,16 @@ export class DashboardService {
           createdAt: true,
         },
       }),
+      this.prisma.merchantLegalDocument.count({ where: { status: 'PENDING' } }),
+      this.prisma.merchantLegalDocument.count({
+        where: { status: 'PENDING', user: { emailVerifiedAt: { not: null } } },
+      }),
+      this.prisma.merchantLegalDocument.count({
+        where: { status: 'APPROVED' },
+      }),
+      this.prisma.merchantLegalDocument.count({
+        where: { status: 'REJECTED' },
+      }),
     ]);
 
     // Pending invoices = submitted to EIRMS but awaiting final response
@@ -602,6 +666,13 @@ export class DashboardService {
         failedInvoices,
         pendingInvoices,
         cancelledInvoices,
+      },
+      registrationReviews: {
+        pending: pendingRegistrationDocuments,
+        emailVerified: pendingEmailVerified,
+        emailNotVerified: pendingRegistrationDocuments - pendingEmailVerified,
+        approved: approvedRegistrationDocuments,
+        rejected: rejectedRegistrationDocuments,
       },
       pendingMerchantList: pendingMerchantListRaw.map((m) => ({
         id: m.id,

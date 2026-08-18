@@ -37,7 +37,9 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context
       .switchToHttp()
-      .getRequest<Request & { user?: JwtPayload; activeConsent?: ActiveConsent }>();
+      .getRequest<
+        Request & { user?: JwtPayload; activeConsent?: ActiveConsent }
+      >();
     const user = request.user;
 
     // Resolve a consent grant for a SUPER_ADMIN carrying the consent header,

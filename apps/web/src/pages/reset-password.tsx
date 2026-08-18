@@ -52,7 +52,7 @@ export function ResetPasswordPage() {
           err instanceof ApiError
             ? (readApiMessage(err.body) ??
               "This reset link is no longer valid.")
-            : "Couldn't reach the server. Check your connection.",
+            : "Unable to connect. Check your connection and try again.",
         items: [],
       });
     }

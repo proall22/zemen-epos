@@ -13,6 +13,7 @@ import { RequestContextService } from '../audit/request-context.service';
 import type { JwtPayload } from '../auth/auth.types';
 import { merchantScope } from '../common/tenant-scope';
 import { PrismaService } from '../prisma/prisma.service';
+import { TransactionalEmailService } from '../notifications/transactional-email.service';
 import type { CreateUserDto } from './dto/create-user.dto';
 import type { QueryUsersDto } from './dto/query-users.dto';
 import type { UpdateUserDto } from './dto/update-user.dto';
@@ -24,6 +25,7 @@ export class UsersService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly context: RequestContextService,
+    private readonly transactionalEmail: TransactionalEmailService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -101,7 +103,7 @@ export class UsersService implements OnModuleInit {
 
     if (isSuperAdmin && isCreatingSuperAdmin) {
       this.logger.log(`SUPER_ADMIN creating another SUPER_ADMIN: ${email}`);
-      return this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(async (tx) => {
         const created = await tx.user.create({
           data: {
             email,
@@ -110,6 +112,7 @@ export class UsersService implements OnModuleInit {
             role: 'SUPER_ADMIN',
             merchantId: null,
             branchId: null,
+            emailVerifiedAt: new Date(),
           },
         });
         return tx.user.findUniqueOrThrow({
@@ -117,6 +120,13 @@ export class UsersService implements OnModuleInit {
           include: { branchAccess: { select: { branchId: true } } },
         });
       });
+      void this.transactionalEmail.notify({
+        type: 'ACCOUNT_CREATED',
+        to: created.email,
+        name: created.name,
+        accountType: roleLabel(created.role),
+      });
+      return created;
     }
 
     if (isCreatingSuperAdmin) {
@@ -133,7 +143,7 @@ export class UsersService implements OnModuleInit {
       input.branchId ?? null,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
           email,
@@ -142,6 +152,7 @@ export class UsersService implements OnModuleInit {
           role: input.role,
           merchantId: tenant.merchantId,
           branchId: branchGrants.pinnedBranchId,
+          emailVerifiedAt: new Date(),
         },
       });
 
@@ -159,6 +170,15 @@ export class UsersService implements OnModuleInit {
         include: { branchAccess: { select: { branchId: true } } },
       });
     });
+    if (isSuperAdmin) {
+      void this.transactionalEmail.notify({
+        type: 'ACCOUNT_CREATED',
+        to: created.email,
+        name: created.name,
+        accountType: roleLabel(created.role),
+      });
+    }
+    return created;
   }
 
   private async resolveBranchGrants(
@@ -367,7 +387,7 @@ export class UsersService implements OnModuleInit {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id },
         data: {
@@ -399,6 +419,18 @@ export class UsersService implements OnModuleInit {
         include: { branchAccess: { select: { branchId: true } } },
       });
     });
+    if (isSuperAdmin) {
+      const changedFields = userChangedFields(target, input);
+      if (changedFields.length > 0) {
+        void this.transactionalEmail.notify({
+          type: 'ACCOUNT_UPDATED',
+          to: updated.email,
+          name: updated.name,
+          changedFields,
+        });
+      }
+    }
+    return updated;
   }
 
   recordLogin(id: string): Promise<User> {
@@ -532,6 +564,7 @@ export class UsersService implements OnModuleInit {
           active: true,
           merchantId: null,
           branchId: null,
+          emailVerifiedAt: new Date(),
         },
       });
       this.logger.log(
@@ -601,6 +634,7 @@ export class UsersService implements OnModuleInit {
           merchantId: tenant.merchantId || firstMerchant.id,
           branchId: tenant.branchId,
           active: true,
+          emailVerifiedAt: new Date(),
         },
       });
 
@@ -609,4 +643,26 @@ export class UsersService implements OnModuleInit {
       );
     }
   }
+}
+
+function roleLabel(role: User['role']): string {
+  return role
+    .toLowerCase()
+    .split('_')
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function userChangedFields(target: User, input: UpdateUserDto): string[] {
+  const changed: string[] = [];
+  if (input.name !== undefined && (input.name.trim() || null) !== target.name)
+    changed.push('Name');
+  if (input.role !== undefined && input.role !== target.role)
+    changed.push('Account role');
+  if (input.active !== undefined && input.active !== target.active)
+    changed.push('Account status');
+  if (input.password) changed.push('Password');
+  if (input.branchIds !== undefined || input.branchId !== undefined)
+    changed.push('Branch access');
+  return changed;
 }

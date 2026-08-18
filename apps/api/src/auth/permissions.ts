@@ -79,7 +79,6 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   'store.view',
   'vendor.view',
   'purchase.view',
-  'report.view',
 ];
 
 /**
@@ -288,12 +287,33 @@ export const ROLE_PERMISSIONS: Record<UserRole, ReadonlyArray<string>> = {
   ],
   // Compatibility until branch-bound legacy rows migrate to BRANCH_ADMIN.
   ADMIN: [
-    'dashboard.view', 'inventory.view', 'inventory.create', 'inventory.update',
-    'inventory.delete', 'buyer.view', 'buyer.create', 'buyer.update', 'buyer.delete',
-    'invoice.view', 'invoice.create', 'invoice.update', 'receipt.view', 'receipt.create',
-    'withholding.view', 'branch.view', 'store.view', 'store.create', 'store.update',
-    'vendor.view', 'vendor.create', 'vendor.update', 'purchase.view', 'purchase.create',
-    'writeoff.create', 'report.view', 'report.manage',
+    'dashboard.view',
+    'inventory.view',
+    'inventory.create',
+    'inventory.update',
+    'inventory.delete',
+    'buyer.view',
+    'buyer.create',
+    'buyer.update',
+    'buyer.delete',
+    'invoice.view',
+    'invoice.create',
+    'invoice.update',
+    'receipt.view',
+    'receipt.create',
+    'withholding.view',
+    'branch.view',
+    'store.view',
+    'store.create',
+    'store.update',
+    'vendor.view',
+    'vendor.create',
+    'vendor.update',
+    'purchase.view',
+    'purchase.create',
+    'writeoff.create',
+    'report.view',
+    'report.manage',
   ],
 };
 
