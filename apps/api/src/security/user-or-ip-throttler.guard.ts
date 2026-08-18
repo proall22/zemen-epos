@@ -6,9 +6,10 @@ import type { Request } from 'express';
 import type { JwtPayload } from '../auth/auth.types';
 
 /**
- * Tracker: prefer the authenticated user's id so a signed-in user shares
- * one rate budget across devices and IPs; fall back to the request IP for
- * anonymous calls.
+ * Tracker: partition authenticated budgets by merchant and user. Including
+ * the merchant prevents traffic in one tenant from consuming another
+ * tenant's budget (especially during scoped Super Admin support sessions).
+ * Anonymous calls fall back to the request IP.
  *
  * Why not pure-IP: NAT and corporate proxies collapse many users behind one
  * IP — a single noisy user there would block their colleagues. Why not
@@ -22,7 +23,10 @@ export class UserOrIpThrottlerGuard extends ThrottlerGuard {
     req: Request & { user?: JwtPayload },
   ): Promise<string> {
     const userId = req.user?.sub;
-    if (userId) return Promise.resolve(`u:${userId}`);
+    if (userId) {
+      const merchantId = req.user?.merchantId ?? 'platform';
+      return Promise.resolve(`m:${merchantId}:u:${userId}`);
+    }
     return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
   }
 

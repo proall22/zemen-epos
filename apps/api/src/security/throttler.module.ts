@@ -14,9 +14,10 @@ import { UserOrIpThrottlerGuard } from './user-or-ip-throttler.guard';
  *  - `short`  — smooths bursty traffic (30 req / 10 s per tracker).
  *  - `medium` — caps sustained traffic (300 req / 1 min per tracker).
  *
- * The tracker is `req.user.sub` for authenticated requests, falling back to
- * the request IP for anonymous ones — so a single signed-in user shares
- * their budget across devices/IPs, while anonymous abuse is bounded per-IP.
+ * The tracker is `merchantId + req.user.sub` for authenticated requests,
+ * falling back to the request IP for anonymous ones. This keeps tenant
+ * budgets isolated while a signed-in user shares their budget across
+ * devices/IPs.
  *
  * State lives in Redis (same instance BullMQ uses) so the limiter survives
  * restarts and is shared across API replicas. When `REDIS_URL` isn't set the

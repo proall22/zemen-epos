@@ -46,6 +46,8 @@ const config = {
   clientSecret: 'env-secret',
   apikey: 'env-apikey',
   tin: 'env-tin',
+  systemNumber: 'env-system',
+  systemType: 'POS' as const,
   seller: {
     legalName: '',
     email: '',

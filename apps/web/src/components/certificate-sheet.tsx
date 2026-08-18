@@ -598,8 +598,19 @@ function Pill({ on, label }: { on: boolean; label: string }) {
 }
 
 function IssuedPanel({ status }: { status: CertificateStatus }) {
+  const requiresAttention =
+    status.cert.lifecycle === "EXPIRING" ||
+    status.cert.lifecycle === "EXPIRED" ||
+    status.cert.lifecycle === "NOT_YET_VALID";
   return (
-    <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-4">
+    <div
+      className={cn(
+        "rounded-md border p-4",
+        requiresAttention
+          ? "border-amber-500/50 bg-amber-500/10"
+          : "border-emerald-500/40 bg-emerald-500/5",
+      )}
+    >
       <div className="mb-2 flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-300">
         <KeyRound className="size-4" />
         Certificate installed
@@ -627,6 +638,27 @@ function IssuedPanel({ status }: { status: CertificateStatus }) {
             : "—"}
         </dd>
       </dl>
+      {status.cert.lifecycle === "EXPIRING" && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          This certificate expires in {status.cert.daysUntilExpiry} day(s).
+          Start renewal with INSA now to avoid interrupted invoicing.
+        </p>
+      )}
+      {status.cert.lifecycle === "EXPIRED" && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-red-700 dark:text-red-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          This certificate has expired. MoR submissions are blocked until a
+          renewed certificate is uploaded.
+        </p>
+      )}
+      {status.cert.lifecycle === "NOT_YET_VALID" && (
+        <p className="mt-3 flex items-start gap-2 text-sm text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          This certificate is not valid yet. Check its start date and the
+          server clock before submitting to MoR.
+        </p>
+      )}
     </div>
   );
 }

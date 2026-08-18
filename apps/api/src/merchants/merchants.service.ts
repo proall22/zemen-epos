@@ -12,6 +12,7 @@ import { Prisma, type Branch, type Merchant } from '@prisma/client';
 import { RequestContextService } from '../audit/request-context.service';
 import { CertificatesService } from '../certificates/certificates.service';
 import { EirmsSigningService } from '../eirms/eirms-signing.service';
+import { EirmsAuthService } from '../eirms/eirms-auth.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultService } from '../vault/vault.service';
@@ -68,6 +69,7 @@ export class MerchantsService implements OnModuleInit {
     private readonly vault: VaultService,
     private readonly certificates: CertificatesService,
     private readonly signing: EirmsSigningService,
+    private readonly eirmsAuth: EirmsAuthService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -78,6 +80,13 @@ export class MerchantsService implements OnModuleInit {
       // in CI/staging, but let the API start so unrelated routes keep working.
       this.logger.error(
         `Default merchant bootstrap failed: ${(err as Error).message}`,
+      );
+    }
+    try {
+      await this.seedConfiguredDefaultCredentials();
+    } catch (err) {
+      this.logger.error(
+        `Configured default-branch credential seed failed: ${(err as Error).message}`,
       );
     }
     try {
@@ -101,6 +110,78 @@ export class MerchantsService implements OnModuleInit {
         `Default-branch signing seed failed: ${(err as Error).message}`,
       );
     }
+  }
+
+  /** Explicit operator-controlled seed for credentials issued to the system
+   * owner. Secrets go directly to Vault and never to PostgreSQL. */
+  private async seedConfiguredDefaultCredentials(): Promise<void> {
+    if (this.config.get<string>('EIRMS_SEED_DEFAULT_CREDENTIALS') !== 'true') {
+      return;
+    }
+
+    const clientId = this.config.get<string>('EIRMS_CLIENT_ID');
+    const clientSecret = this.config.get<string>('EIRMS_CLIENT_SECRET');
+    const apikey = this.config.get<string>('EIRMS_API_KEY');
+    const tin = this.config.get<string>('EIRMS_TIN');
+    const systemNumber = this.config.get<string>('EIRMS_SYSTEM_NUMBER');
+    if (!clientId || !clientSecret || !apikey || !tin || !systemNumber) {
+      throw new Error(
+        'EIRMS default credential seed is enabled, but one or more required EIRMS values are missing.',
+      );
+    }
+
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: DEFAULT_BRANCH_ID },
+      select: { merchantId: true },
+    });
+    if (!branch || branch.merchantId !== DEFAULT_MERCHANT_ID) {
+      throw new Error(
+        'The default system-owner branch does not exist. Assign these credentials to the intended branch through the Super Admin branch form.',
+      );
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.merchant.update({
+        where: { id: DEFAULT_MERCHANT_ID },
+        data: {
+          tin,
+          legalName:
+            this.config.get<string>('EIRMS_SELLER_LEGAL_NAME') ?? undefined,
+        },
+      }),
+      this.prisma.branch.update({
+        where: { id: DEFAULT_BRANCH_ID },
+        data: { systemNumber },
+      }),
+    ]);
+    await this.vault.writeBranchCreds(
+      DEFAULT_MERCHANT_ID,
+      DEFAULT_BRANCH_ID,
+      { clientId, clientSecret, apikey },
+    );
+    this.logger.log(
+      `Seeded configured EIRMS identity and Vault credentials for ${DEFAULT_MERCHANT_ID}/${DEFAULT_BRANCH_ID}.`,
+    );
+  }
+
+  async testBranchEirmsConnection(
+    merchantId: string,
+    branchId: string,
+  ): Promise<{
+    ok: true;
+    tin: string;
+    systemType: string;
+    systemNumber: string;
+  }> {
+    this.assertOwnMerchant(merchantId);
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, merchantId },
+      select: { id: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found for this merchant.');
+    }
+    return this.eirmsAuth.testConnection(branchId);
   }
 
   /** Legacy-only: fills the seed merchant + branch from env when a legacy
@@ -148,6 +229,8 @@ export class MerchantsService implements OnModuleInit {
       where: { id: DEFAULT_BRANCH_ID },
       data: {
         name: 'Main',
+        systemNumber:
+          this.config.get<string>('EIRMS_SYSTEM_NUMBER')?.trim() ?? '',
         region: this.config.get<string>('EIRMS_SELLER_REGION') ?? null,
         wereda: this.config.get<string>('EIRMS_SELLER_WEREDA') ?? null,
       },

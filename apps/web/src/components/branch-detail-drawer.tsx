@@ -8,6 +8,7 @@ import {
   Store,
   TriangleAlert,
   UserCheck,
+  Wifi,
 } from "lucide-react";
 
 import { BranchReadiness } from "@/components/branch-readiness";
@@ -22,7 +23,14 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { getBranchStats, type BranchStats } from "@/lib/resources";
+import { ApiError } from "@/lib/api";
+import { readApiMessage } from "@/lib/api-errors";
+import {
+  getBranchStats,
+  testBranchEirmsConnection,
+  type BranchStats,
+  type EirmsConnectionTest,
+} from "@/lib/resources";
 import type { SafeBranch } from "@/lib/types";
 
 export interface BranchDetailDrawerProps {
@@ -30,6 +38,7 @@ export interface BranchDetailDrawerProps {
   onClose: () => void;
   onEdit?: (b: SafeBranch) => void;
   onOpenCertificate?: (b: SafeBranch) => void;
+  canTestEirms?: boolean;
 }
 
 export function BranchDetailDrawer({
@@ -37,15 +46,19 @@ export function BranchDetailDrawer({
   onClose,
   onEdit,
   onOpenCertificate,
+  canTestEirms = false,
 }: BranchDetailDrawerProps) {
   const [stats, setStats] = useState<BranchStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<EirmsConnectionTest | null>(null);
 
   useEffect(() => {
     if (!branch) {
       setStats(null);
       setError(null);
+      setTestResult(null);
       return;
     }
     setLoading(true);
@@ -55,6 +68,28 @@ export function BranchDetailDrawer({
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
   }, [branch?.id]);
+
+  async function testEirms() {
+    if (!branch) return;
+    setTesting(true);
+    setError(null);
+    setTestResult(null);
+    try {
+      setTestResult(
+        await testBranchEirmsConnection(branch.merchantId, branch.id),
+      );
+    } catch (e) {
+      setError(
+        e instanceof ApiError
+          ? readApiMessage(e.body) ?? "MoR rejected the login. Check the branch credentials."
+          : e instanceof Error
+            ? e.message
+            : "MoR login test failed.",
+      );
+    } finally {
+      setTesting(false);
+    }
+  }
 
   const ready =
     branch?.eirmsClientIdSet &&
@@ -146,6 +181,16 @@ export function BranchDetailDrawer({
           {error && (
             <p className="text-xs text-destructive">Couldn't load stats: {error}</p>
           )}
+          {testResult && (
+            <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm">
+              <p className="font-medium text-emerald-700 dark:text-emerald-300">
+                MoR login succeeded
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                TIN {testResult.tin || "not returned"} · Source {testResult.systemNumber || "not returned"} · {testResult.systemType}
+              </p>
+            </div>
+          )}
         </SheetBody>
 
         <SheetFooter>
@@ -171,6 +216,21 @@ export function BranchDetailDrawer({
               }}
             >
               Edit branch
+            </Button>
+          )}
+          {canTestEirms && branch && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={testEirms}
+              disabled={testing || !ready}
+            >
+              {testing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Wifi className="size-4" />
+              )}
+              Test MoR login
             </Button>
           )}
         </SheetFooter>

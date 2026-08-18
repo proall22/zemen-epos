@@ -79,6 +79,25 @@ export class EirmsAuthService {
     return (await this.ensureToken(this.resolveBranch(branchId))).encryptionKey;
   }
 
+  /** Force a fresh MoR login for an operator-initiated credential check.
+   * Returns only non-secret identity claims; tokens and encryption material
+   * never leave this service. */
+  async testConnection(branchId: string): Promise<{
+    ok: true;
+    tin: string;
+    systemType: string;
+    systemNumber: string;
+  }> {
+    this.cachedByBranch.delete(branchId);
+    const token = await this.ensureToken(branchId);
+    return {
+      ok: true,
+      tin: token.claims.tin ?? '',
+      systemType: token.claims.systemType ?? 'POS',
+      systemNumber: token.claims.systemNumber ?? '',
+    };
+  }
+
   /**
    * System identity stamped onto outgoing payloads — for the resolved branch.
    * Reads from the cached JWT claims (which carry the TIN + system number that

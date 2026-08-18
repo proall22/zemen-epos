@@ -226,6 +226,19 @@ export class MerchantsController {
     return this.merchants.branchStats(id, branchId);
   }
 
+  @Post('merchants/:id/branches/:branchId/eirms/test')
+  @RequirePermissions('branch.update')
+  @ApiOperation({
+    summary:
+      'Force a fresh MoR login for this branch and return non-secret source identity claims.',
+  })
+  testBranchEirmsConnection(
+    @Param('id') id: string,
+    @Param('branchId') branchId: string,
+  ) {
+    return this.merchants.testBranchEirmsConnection(id, branchId);
+  }
+
   @Patch('merchants/:id/branches/:branchId')
   @RequirePermissions('branch.update')
   @ApiOperation({

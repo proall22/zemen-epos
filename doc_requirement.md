@@ -608,6 +608,12 @@ The application can call HTTPS services, and the SMS gateway configuration requi
 
 Therefore, TLS 1.3 enforcement cannot currently be claimed from this repository alone.
 
+The application rejects arbitrary non-HTTPS `EIRMS_BASE_URL` values during
+production startup. The explicitly recognized `core.mor.gov.et` HTTP gateway
+remains supported because it is the currently configured MoR integration path.
+TLS 1.3 and mTLS still depend on an authoritative upstream gateway and deployment
+termination configuration.
+
 ## Audit retention and immutability
 
 The observability configuration retains Loki logs for approximately 90 days and Prometheus metrics for 90 days.
@@ -636,7 +642,10 @@ Vault does use merchant/branch-specific secret paths, which provides meaningful 
 
 ## Rate limiting
 
-The system implements user/IP throttling. It does not clearly implement a distinct quota bucket and configured limit for each merchant.
+The system implements user/IP throttling, and authenticated limiter keys are now
+partitioned by merchant and user so one tenant cannot consume another tenant's
+budget. It does not yet implement a separately configurable aggregate quota for
+each merchant.
 
 If the aggregator rules require per-merchant rate limits, a merchant-aware throttling key and quotas must be implemented and tested.
 
@@ -886,6 +895,7 @@ Before claiming full compliance, address these tasks in order:
 | Callback endpoint | Missing for EIRMS bulk processing |
 | Application audit logging | Implemented |
 | Immutable audit storage | Missing |
+| Production transport allow-list | Implemented; recognized MoR HTTP gateway remains compatible |
 | TLS 1.3 enforcement | Deployment evidence missing |
 | MFA | Missing |
 | RBAC | Implemented |

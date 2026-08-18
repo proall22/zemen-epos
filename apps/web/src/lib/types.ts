@@ -287,6 +287,8 @@ export interface CertificateStatus {
     serial: string | null;
     notBefore: string | null;
     notAfter: string | null;
+    lifecycle: "MISSING" | "NOT_YET_VALID" | "VALID" | "EXPIRING" | "EXPIRED";
+    daysUntilExpiry: number | null;
   };
   form: {
     contactFullName: string | null;

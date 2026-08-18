@@ -637,6 +637,7 @@ export function MerchantsPage() {
         onOpenCertificate={
           canEditBranch ? (b) => setCertBranch(b) : undefined
         }
+        canTestEirms={canEditBranch}
       />
     </div>
   );

@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { eirmsConfig } from '../eirms/eirms.config';
+import { EirmsModule } from '../eirms/eirms.module';
 import {
   BranchCertificatesController,
   CertificatesController,
@@ -12,7 +13,7 @@ import { CertificatesService } from './certificates.service';
  *  approval / branch-create hooks without an explicit forwardRef. */
 @Global()
 @Module({
-  imports: [ConfigModule.forFeature(eirmsConfig)],
+  imports: [ConfigModule.forFeature(eirmsConfig), EirmsModule],
   controllers: [CertificatesController, BranchCertificatesController],
   providers: [CertificatesService],
   exports: [CertificatesService],

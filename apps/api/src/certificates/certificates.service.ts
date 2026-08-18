@@ -12,6 +12,7 @@ import type { Branch, BranchCertificate, Merchant } from '@prisma/client';
 
 import { RequestContextService } from '../audit/request-context.service';
 import { eirmsConfig } from '../eirms/eirms.config';
+import { EirmsSigningService } from '../eirms/eirms-signing.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultService } from '../vault/vault.service';
 import {
@@ -47,6 +48,8 @@ export interface CertificateStatus {
     serial: string | null;
     notBefore: Date | null;
     notAfter: Date | null;
+    lifecycle: 'MISSING' | 'NOT_YET_VALID' | 'VALID' | 'EXPIRING' | 'EXPIRED';
+    daysUntilExpiry: number | null;
   };
   form: {
     contactFullName: string | null;
@@ -65,6 +68,7 @@ export class CertificatesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vault: VaultService,
+    private readonly signing: EirmsSigningService,
     private readonly context: RequestContextService,
     @Inject(eirmsConfig.KEY)
     private readonly config: ConfigType<typeof eirmsConfig>,
@@ -234,6 +238,7 @@ export class CertificatesService {
       this.vault.readBranchSigning(merchantId, branchId),
       this.prisma.branchCertificate.findUnique({ where: { branchId } }),
     ]);
+    const lifecycle = certificateLifecycle(row?.certNotBefore, row?.certNotAfter);
     return {
       hasPrivateKey: !!material?.privateKeyPem,
       hasCsr: !!row?.csrPem,
@@ -246,6 +251,8 @@ export class CertificatesService {
         serial: row?.certSerial ?? null,
         notBefore: row?.certNotBefore ?? null,
         notAfter: row?.certNotAfter ?? null,
+        lifecycle: lifecycle.state,
+        daysUntilExpiry: lifecycle.daysUntilExpiry,
       },
       form: {
         contactFullName: row?.contactFullName ?? null,
@@ -430,6 +437,18 @@ export class CertificatesService {
       );
     }
 
+    const now = new Date();
+    if (leaf.notBefore.getTime() > now.getTime()) {
+      throw new BadRequestException(
+        `This certificate is not valid yet. It becomes valid on ${leaf.notBefore.toISOString()}. Check that the correct certificate was selected and that the server clock is accurate.`,
+      );
+    }
+    if (leaf.notAfter.getTime() <= now.getTime()) {
+      throw new BadRequestException(
+        `This certificate expired on ${leaf.notAfter.toISOString()}. Upload a renewed certificate issued by INSA.`,
+      );
+    }
+
     await this.vault.writeBranchSigning(merchantId, branchId, {
       privateKeyPem: effectivePrivateKey,
       certPem,
@@ -465,6 +484,7 @@ export class CertificatesService {
     this.logger.log(
       `Accepted ${usedByo ? 'BYO ' : ''}INSA certificate for branch ${branchId} (CN=${leaf.subjectCn}, expires ${leaf.notAfter.toISOString()}).`,
     );
+    this.signing.invalidate({ merchantId, branchId });
     return this.getStatus(merchantId, branchId);
   }
 
@@ -551,6 +571,34 @@ export class CertificatesService {
         'noreply@example.com',
     };
   }
+}
+
+const CERTIFICATE_EXPIRY_WARNING_DAYS = 30;
+
+function certificateLifecycle(
+  notBefore: Date | null | undefined,
+  notAfter: Date | null | undefined,
+  now = new Date(),
+): {
+  state: 'MISSING' | 'NOT_YET_VALID' | 'VALID' | 'EXPIRING' | 'EXPIRED';
+  daysUntilExpiry: number | null;
+} {
+  if (!notBefore || !notAfter) {
+    return { state: 'MISSING', daysUntilExpiry: null };
+  }
+  if (notBefore.getTime() > now.getTime()) {
+    return { state: 'NOT_YET_VALID', daysUntilExpiry: null };
+  }
+  const remainingMs = notAfter.getTime() - now.getTime();
+  const daysUntilExpiry = Math.max(
+    0,
+    Math.ceil(remainingMs / (24 * 60 * 60 * 1000)),
+  );
+  if (remainingMs <= 0) return { state: 'EXPIRED', daysUntilExpiry: 0 };
+  if (daysUntilExpiry <= CERTIFICATE_EXPIRY_WARNING_DAYS) {
+    return { state: 'EXPIRING', daysUntilExpiry };
+  }
+  return { state: 'VALID', daysUntilExpiry };
 }
 
 /** Empty strings from HTML forms become "clear this field" in Prisma. */

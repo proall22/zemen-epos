@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { X509Certificate } from 'node:crypto';
 
 import {
   Injectable,
@@ -124,6 +125,42 @@ export class EirmsSigningService implements OnModuleInit {
         ],
         reasonCode: 'BRANCH_NOT_READY',
         reasonMissing: missing,
+      });
+    }
+    let certificate: X509Certificate;
+    try {
+      certificate = new X509Certificate(stored.certPem);
+    } catch {
+      throw new ServiceUnavailableException({
+        message: 'This branch has an invalid INSA certificate.',
+        userMessages: [
+          'The installed INSA certificate cannot be read.',
+          'A merchant admin must upload the correct PEM certificate in the branch certificate wizard.',
+        ],
+        reasonCode: 'CERTIFICATE_INVALID',
+      });
+    }
+    const now = Date.now();
+    const validFrom = new Date(certificate.validFrom).getTime();
+    const validTo = new Date(certificate.validTo).getTime();
+    if (validFrom > now) {
+      throw new ServiceUnavailableException({
+        message: 'This branch certificate is not valid yet.',
+        userMessages: [
+          `The installed INSA certificate becomes valid on ${new Date(validFrom).toISOString()}.`,
+          'Check the server clock or upload the correct certificate.',
+        ],
+        reasonCode: 'CERTIFICATE_NOT_YET_VALID',
+      });
+    }
+    if (validTo <= now) {
+      throw new ServiceUnavailableException({
+        message: 'This branch certificate has expired.',
+        userMessages: [
+          `The installed INSA certificate expired on ${new Date(validTo).toISOString()}.`,
+          'A merchant admin must complete certificate renewal before sending more MoR requests.',
+        ],
+        reasonCode: 'CERTIFICATE_EXPIRED',
       });
     }
     const material: SigningMaterial = {

@@ -1158,6 +1158,23 @@ export function getBranchStats(
   );
 }
 
+export interface EirmsConnectionTest {
+  ok: true;
+  tin: string;
+  systemType: string;
+  systemNumber: string;
+}
+
+export function testBranchEirmsConnection(
+  merchantId: string,
+  branchId: string,
+): Promise<EirmsConnectionTest> {
+  return api<EirmsConnectionTest>(
+    `/merchants/${merchantId}/branches/${branchId}/eirms/test`,
+    { method: 'POST' },
+  );
+}
+
 export interface BranchInput {
   name: string;
   systemNumber?: string | null;
