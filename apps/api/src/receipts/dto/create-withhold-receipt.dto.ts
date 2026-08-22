@@ -14,7 +14,8 @@ export type WithholdType = (typeof WITHHOLD_TYPES)[number];
 
 export class WithholdInvoiceDetailDto {
   @ApiProperty({
-    example: 'test-ad6205eb149f59564508f3cee0a5ef26a1b1ff872d02a3283dab51a552788875',
+    example:
+      'test-ad6205eb149f59564508f3cee0a5ef26a1b1ff872d02a3283dab51a552788875',
     description: "External seller invoice IRN we're withholding against",
   })
   @IsString()
@@ -34,8 +35,13 @@ export class WithholdInvoiceDetailDto {
 
 export class WithholdDetailDto {
   @ApiProperty({ enum: WITHHOLD_TYPES, example: 'TWTH' })
-  @IsIn(WITHHOLD_TYPES as unknown as string[])
+  @IsIn(WITHHOLD_TYPES)
   type!: WithholdType;
+
+  @ApiPropertyOptional({ enum: ['goods', 'service'], example: 'goods' })
+  @IsOptional()
+  @IsIn(['goods', 'service'])
+  nature?: 'goods' | 'service';
 
   @ApiPropertyOptional({
     example: 3,

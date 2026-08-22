@@ -17,12 +17,13 @@ import { RequestContextService } from '../audit/request-context.service';
 import { StoreResolverService } from '../common/store-resolver.service';
 import { merchantScope } from '../common/tenant-scope';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemConfigurationService } from '../system-configuration/system-configuration.service';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { CreateInventoryItemDto } from './dto/create-inventory-item.dto';
 import { UpdateInventoryItemDto } from './dto/update-inventory-item.dto';
 import { StockCountDto } from './dto/stock-count.dto';
 import { WriteOffDto } from './dto/write-off.dto';
-import { DEFAULT_TAX_CODE, taxRateForCode } from './tax-codes';
+import { DEFAULT_TAX_CODE } from './tax-codes';
 
 /** Catalogue row with on-hand computed at read time. */
 export type InventoryItemWithStock = InventoryItem & {
@@ -64,6 +65,7 @@ export class InventoryService {
     private readonly prisma: PrismaService,
     private readonly context: RequestContextService,
     private readonly storeResolver: StoreResolverService,
+    private readonly systemConfiguration: SystemConfigurationService,
   ) {}
 
   /** Resolve the merchant to write inventory rows / stock movements against.
@@ -137,10 +139,18 @@ export class InventoryService {
       : undefined;
     const where: Prisma.InventoryItemWhereInput = contains
       ? {
-          AND: [baseWhere, { OR: [
-            { code: contains }, { sku: contains }, { upc: contains },
-            { description: contains }, { longDescription: contains },
-          ] }],
+          AND: [
+            baseWhere,
+            {
+              OR: [
+                { code: contains },
+                { sku: contains },
+                { upc: contains },
+                { description: contains },
+                { longDescription: contains },
+              ],
+            },
+          ],
         }
       : baseWhere;
     const [rows, total] = await this.prisma.$transaction([
@@ -228,7 +238,9 @@ export class InventoryService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('A category with this name already exists.');
+        throw new ConflictException(
+          'A category with this name already exists.',
+        );
       }
       throw error;
     }
@@ -338,18 +350,19 @@ export class InventoryService {
       where: {
         id,
         ...merchantScope(this.context.get()),
-        },
+      },
     });
     if (!item) throw new NotFoundException(`Item ${id} not found`);
     return item;
   }
 
-  private toCreateData(
+  private async toCreateData(
     input: CreateInventoryItemDto,
     merchantId: string,
-  ): Prisma.InventoryItemCreateInput {
+  ): Promise<Prisma.InventoryItemCreateInput> {
     const trackStock = input.trackStock ?? false;
     const taxCode = input.taxCode ?? DEFAULT_TAX_CODE;
+    const configuredTax = await this.systemConfiguration.activeTaxCode(taxCode);
     return {
       code: input.code,
       sku: input.sku?.trim() || null,
@@ -365,7 +378,7 @@ export class InventoryService {
       taxCode,
       // Always derived — never taken from the client, so the code and the rate
       // can't disagree.
-      taxRate: taxRateForCode(taxCode),
+      taxRate: configuredTax.rate,
       harmonizationCode: input.harmonizationCode?.trim() || null,
       exciseRate: input.exciseRate ?? null,
       nature: input.nature ?? 'goods',
@@ -383,7 +396,7 @@ export class InventoryService {
     }
     try {
       const item = await this.prisma.inventoryItem.create({
-        data: this.toCreateData(input, merchantId),
+        data: await this.toCreateData(input, merchantId),
       });
       // Opening balance lands in the acting branch's store. Skipped when the
       // caller has no branch — stock is added later via Restock.
@@ -429,11 +442,12 @@ export class InventoryService {
   ): Promise<InventoryItem> {
     const old = await this.get(id); // 404 if missing — already merchant-scoped
     const merchantId = this.resolveMerchantId();
+    const createData = await this.toCreateData(input, merchantId);
     try {
       const [created] = await this.prisma.$transaction([
         this.prisma.inventoryItem.create({
           data: {
-            ...this.toCreateData(input, merchantId),
+            ...createData,
             predecessor: { connect: { id: old.id } },
           },
         }),
@@ -583,7 +597,10 @@ export class InventoryService {
   private async resolveWriteStore(explicitStoreId?: string): Promise<Store> {
     const branchId = this.context.get()?.branchId;
     if (branchId) {
-      return this.storeResolver.resolveWriteStore({ branchId, explicitStoreId });
+      return this.storeResolver.resolveWriteStore({
+        branchId,
+        explicitStoreId,
+      });
     }
     if (!explicitStoreId) {
       throw new BadRequestException({
@@ -600,7 +617,8 @@ export class InventoryService {
         ...merchantScope(this.context.get()),
       },
     });
-    if (!store) throw new NotFoundException(`Store ${explicitStoreId} not found`);
+    if (!store)
+      throw new NotFoundException(`Store ${explicitStoreId} not found`);
     return store;
   }
 
@@ -662,7 +680,12 @@ export class InventoryService {
     if (input.categoryId) {
       await this.assertCategory(input.categoryId, existing.merchantId);
     }
-    const { categoryId, stockQuantity: _stockQuantity, branchId: _branchId, ...fields } = input;
+    const {
+      categoryId,
+      stockQuantity: _stockQuantity,
+      branchId: _branchId,
+      ...fields
+    } = input;
     const data: Prisma.InventoryItemUpdateInput = { ...fields };
     if (categoryId !== undefined) {
       data.category = categoryId
@@ -674,7 +697,11 @@ export class InventoryService {
     }
     // Keep the rate pinned to the code on edit, same as on create.
     if (input.taxCode !== undefined) {
-      data.taxRate = taxRateForCode(input.taxCode);
+      const configuredTax = await this.systemConfiguration.activeTaxCode(
+        input.taxCode,
+      );
+      data.taxCode = configuredTax.code;
+      data.taxRate = configuredTax.rate;
     }
     try {
       return await this.prisma.inventoryItem.update({

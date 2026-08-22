@@ -2,10 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Eye, Percent, Plus, RefreshCw } from "lucide-react";
 
-import {
-  DocumentFilterBar,
-  PageFooter,
-} from "@/components/document-filter-bar";
+import { DocumentFilterBar } from "@/components/document-filter-bar";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 import { ReceiptDetailSheet } from "@/components/receipt-detail-sheet";
 import { ScopeToggle, useListScope } from "@/components/scope-toggle";
 import { WithholdingFormSheet } from "@/components/withholding-form-sheet";
@@ -44,6 +42,8 @@ export function WithholdingPage() {
   const [filters, setFilters] = useState<DocumentFilters>({});
   const [total, setTotal] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [receiptPages, setReceiptPages] = useState<Receipt[][]>([]);
+  const [pageNumber, setPageNumber] = useState(1);
   const [withheldTotal, setWithheldTotal] = useState(0);
   const [preTaxTotal, setPreTaxTotal] = useState(0);
   const [scope, setScope] = useListScope("eirms:list-scope:withholding");
@@ -57,8 +57,10 @@ export function WithholdingPage() {
     setLoading(true);
     setRefreshError(null);
     try {
-      const page = await getWithholdingRegister({ ...filters, scope });
+      const page = await getWithholdingRegister({ ...filters, scope, limit: TABLE_PAGE_SIZE });
       setReceipts(page.items);
+      setReceiptPages([page.items]);
+      setPageNumber(1);
       setTotal(page.total);
       setNextCursor(page.nextCursor);
       setWithheldTotal(page.withheldTotal);
@@ -78,15 +80,24 @@ export function WithholdingPage() {
     }
   }
 
-  async function loadMore() {
-    if (!nextCursor) return;
-    const page = await getWithholdingRegister({
-      ...filters,
-      scope,
-      cursor: nextCursor,
-    });
-    setReceipts((prev) => [...prev, ...page.items]);
-    setNextCursor(page.nextCursor);
+  async function changePage(nextPage: number) {
+    const cached = receiptPages[nextPage - 1];
+    if (cached) {
+      setReceipts(cached);
+      setPageNumber(nextPage);
+      return;
+    }
+    if (nextPage !== pageNumber + 1 || !nextCursor) return;
+    setLoading(true);
+    try {
+      const result = await getWithholdingRegister({ ...filters, scope, cursor: nextCursor, limit: TABLE_PAGE_SIZE });
+      setReceiptPages((current) => [...current, result.items]);
+      setReceipts(result.items);
+      setNextCursor(result.nextCursor);
+      setPageNumber(nextPage);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const active = useMemo(
@@ -95,7 +106,7 @@ export function WithholdingPage() {
   );
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <WithholdingFormSheet
         open={filing}
         next={next}
@@ -116,10 +127,7 @@ export function WithholdingPage() {
             <Percent className="size-6 text-[#5700FF]" />
             Withholding
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Tax withheld on supplier invoices, filed with MOR. Rate is fixed at
-            3% of the pre-tax amount.
-          </p>
+          <p className="text-sm text-muted-foreground">Supplier withholding receipts filed with MOR.</p>
         </div>
         <div className="flex items-center gap-2">
           <ScopeToggle scope={scope} onChange={setScope} />
@@ -232,13 +240,7 @@ export function WithholdingPage() {
               </TableBody>
             </Table>
           )}
-                  <PageFooter
-            shown={receipts.length}
-            total={total}
-            hasMore={Boolean(nextCursor)}
-            loading={loading}
-            onMore={loadMore}
-          />
+          <TablePagination page={pageNumber} pageCount={Math.ceil(total / TABLE_PAGE_SIZE)} total={total} shown={receipts.length} onPage={(nextPage) => void changePage(nextPage)} />
         </CardContent>
       </Card>
 

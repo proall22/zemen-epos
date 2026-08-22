@@ -48,6 +48,7 @@ import { ReceiptsPage } from "@/pages/receipts";
 import { SalePage } from "@/pages/sale";
 import { UsersPage } from "@/pages/users";
 import { WithholdingPage } from "@/pages/withholding";
+import { SystemConfigurationPage } from "@/pages/system-configuration";
 
 // Wraps Routes so Sentry names transactions by matched route path.
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes);
@@ -193,6 +194,18 @@ export default function App() {
                     <ReceiptPrintPage />
                   </Guarded>
                 }
+              />
+              <Route
+                path="/system-configuration/tax-codes"
+                element={<Guarded path="/system-configuration/tax-codes"><SystemConfigurationPage section="tax" /></Guarded>}
+              />
+              <Route
+                path="/system-configuration/withholding"
+                element={<Guarded path="/system-configuration/withholding"><SystemConfigurationPage section="withholding" /></Guarded>}
+              />
+              <Route
+                path="/system-configuration/supply"
+                element={<Guarded path="/system-configuration/supply"><SystemConfigurationPage section="supply" /></Guarded>}
               />
               <Route
                 path="/withholding"

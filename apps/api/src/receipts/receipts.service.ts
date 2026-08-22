@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import {
   BadGatewayException,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -42,6 +43,7 @@ import { formatEirmsErrors } from '../eirms/eirms-error-formatter';
 import { MerchantsService } from '../merchants/merchants.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SystemConfigurationService } from '../system-configuration/system-configuration.service';
 import { CreateReceiptDto } from './dto/create-receipt.dto';
 import { CreateWithholdReceiptDto } from './dto/create-withhold-receipt.dto';
 import {
@@ -76,6 +78,8 @@ type PublicReceiptWithRelations = Prisma.ReceiptGetPayload<{
   };
 }>;
 
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
 export interface ReceiptListFilters {
   crossBranch?: boolean;
   from?: string;
@@ -102,6 +106,7 @@ export class ReceiptsService {
     private readonly merchants: MerchantsService,
     private readonly configService: ConfigService,
     private readonly signing: EirmsSigningService,
+    private readonly systemConfiguration: SystemConfigurationService,
   ) {}
 
   /**
@@ -194,7 +199,9 @@ export class ReceiptsService {
    */
   async withholdingRegister(
     opts: ReceiptListFilters = {},
-  ): Promise<Page<ReceiptWithRelations> & { withheldTotal: number; preTaxTotal: number }> {
+  ): Promise<
+    Page<ReceiptWithRelations> & { withheldTotal: number; preTaxTotal: number }
+  > {
     const page = await this.list({ ...opts, kind: 'WITHHOLD' });
     const sums = await this.prisma.receipt.aggregate({
       where: this.receiptWhere({ ...opts, kind: 'WITHHOLD' }),
@@ -384,7 +391,7 @@ export class ReceiptsService {
       invoiceBranchId !== ctx.branchId
     ) {
       throw new ForbiddenException(
-        "You can only record payments for invoices issued at your own branch.",
+        'You can only record payments for invoices issued at your own branch.',
       );
     }
     const tenant = { merchantId, branchId };
@@ -647,11 +654,25 @@ export class ReceiptsService {
   ): Promise<ReceiptWithRelations> {
     const supplierIrn = input.invoiceDetail.invoiceIrn.trim();
     if (!supplierIrn) {
-      throw new ConflictException("Supplier invoice IRN is required.");
+      throw new ConflictException('Supplier invoice IRN is required.');
     }
 
     const tenant = this.resolveTenantForWrite();
     await this.merchants.assertMerchantActive(tenant.merchantId);
+    // Caller-provided arithmetic is never authoritative. Resolve the current
+    // global rate and recompute the amount immediately before filing.
+    const withholding = await this.systemConfiguration.withholding(
+      input.withholdDetail.preTaxAmount,
+      input.withholdDetail.nature ?? 'goods',
+    );
+    if (!withholding.applicable) {
+      throw new BadRequestException(
+        `Withholding applies only when the ${withholding.nature} pre-tax amount is greater than ${withholding.threshold} ETB.`,
+      );
+    }
+    input.withholdDetail.rate = withholding.rate;
+    input.withholdDetail.preTaxAmount = withholding.preTaxAmount;
+    input.withholdDetail.withholdingAmount = withholding.withholdingAmount;
     let next = await this.getNextWithholdSequence();
     const identity = this.auth.getSystemIdentity();
     const token = await this.auth.getAccessToken();
@@ -712,7 +733,7 @@ export class ReceiptsService {
             receiptCurrency: input.invoiceDetail.currency ?? 'ETB',
             exchangeRate: input.invoiceDetail.exchangeRate ?? null,
             withholdType: input.withholdDetail.type,
-            withholdRate: input.withholdDetail.rate ?? 3,
+            withholdRate: withholding.rate,
             withholdPreTax: input.withholdDetail.preTaxAmount,
             withholdAmount: input.withholdDetail.withholdingAmount,
             externalInvoiceIrn: supplierIrn,
@@ -840,7 +861,9 @@ export class ReceiptsService {
         const detail =
           (err.response?.data && JSON.stringify(err.response.data)) ??
           err.message;
-        this.logger.error(`EIRMS ${path} transport error (${status}): ${detail}`);
+        this.logger.error(
+          `EIRMS ${path} transport error (${status}): ${detail}`,
+        );
         void this.audit.recordOutbound({
           action,
           path,

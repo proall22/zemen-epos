@@ -17,16 +17,21 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api";
 import { readApiMessage } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
+import { landingRoute, routeAllows, routeFor } from "@/lib/nav";
 import { savePendingAuth } from "@/lib/pending-auth";
 import type { PendingAuthResponse } from "@/lib/types";
 
 export function LoginPage() {
-  const { status, login } = useAuth();
+  const { status, login, can } = useAuth();
   const location = useLocation();
 
   if (status === "authed") {
+    const requested = (location.state as { from?: string } | null)?.from;
+    const requestedRoute = requested ? routeFor(requested) : undefined;
     const target =
-      (location.state as { from?: string } | null)?.from ?? "/sale";
+      requested && requestedRoute && routeAllows(requestedRoute, can)
+        ? requested
+        : (landingRoute(can) ?? "/dashboard");
     return <Navigate to={target} replace />;
   }
 

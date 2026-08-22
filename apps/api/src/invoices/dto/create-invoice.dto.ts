@@ -17,10 +17,14 @@ import { ReferenceDetailsDto } from './reference-details.dto';
 import { SellerOverridesDto } from './seller-overrides.dto';
 import { SourceSystemInputDto } from './source-system.dto';
 import { ValueDetailsDto } from './value-details.dto';
+import type { WithholdingCalculation } from '../../system-configuration/system-configuration.service';
 
 export type TransactionType = 'B2B' | 'B2C' | 'B2G';
 
 export class CreateInvoiceDto {
+  /** Server-only issue-time snapshot. Client input is stripped by the global
+   * validation whitelist and never trusted. */
+  resolvedWithholding?: WithholdingCalculation;
   @ApiProperty({ enum: ['B2B', 'B2C', 'B2G'], example: 'B2B' })
   @IsIn(['B2B', 'B2C', 'B2G'])
   TransactionType!: TransactionType;

@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/lib/auth";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 import {
   listEmailDomains,
   listEmailEvents,
@@ -88,6 +89,7 @@ export function EmailDeliverabilityPage() {
   const [appliedDomain, setAppliedDomain] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [eventPage, setEventPage] = useState(1);
 
   useEffect(() => {
     if (!allowed) return;
@@ -102,6 +104,7 @@ export function EmailDeliverabilityPage() {
         if (cancelled) return;
         setDomains(d);
         setEvents(e);
+        setEventPage(1);
       })
       .catch((e: Error) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
@@ -137,14 +140,10 @@ export function EmailDeliverabilityPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Email deliverability</h1>
-        <p className="text-sm text-muted-foreground">
-          Last 30 days of outbound activity, grouped by recipient domain.
-          Consumer providers (gmail, yahoo, outlook…) are labelled so
-          corporate-inbox regressions stay visible.
-        </p>
+        <p className="text-sm text-muted-foreground">Outbound delivery results for the last 30 days.</p>
       </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -369,7 +368,7 @@ export function EmailDeliverabilityPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                events.map((e) => (
+                events.slice((eventPage - 1) * TABLE_PAGE_SIZE, eventPage * TABLE_PAGE_SIZE).map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {fmtDate(e.createdAt)}
@@ -396,6 +395,7 @@ export function EmailDeliverabilityPage() {
               )}
             </TableBody>
           </Table>
+          <TablePagination page={eventPage} pageCount={Math.ceil(events.length / TABLE_PAGE_SIZE)} total={events.length} shown={events.slice((eventPage - 1) * TABLE_PAGE_SIZE, eventPage * TABLE_PAGE_SIZE).length} onPage={setEventPage} />
         </CardContent>
       </Card>
     </div>

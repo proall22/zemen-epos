@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import { AuditDetailSheet } from "@/components/audit-detail-sheet";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,8 +24,9 @@ import { useAuth } from "@/lib/auth";
 import { readRequestError } from "@/lib/api-errors";
 import { listAuditLogs, type AuditQuery } from "@/lib/resources";
 import type { AuditDirection, AuditLog } from "@/lib/types";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = TABLE_PAGE_SIZE;
 type DirectionFilter = "ALL" | AuditDirection;
 
 export function AuditPage() {
@@ -84,16 +84,13 @@ export function AuditPage() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex flex-col gap-1">
         <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Zemen-ePos · Admin
         </span>
         <h1 className="text-3xl font-semibold tracking-tight">Audit log</h1>
-        <p className="text-sm text-muted-foreground">
-          Every internal action (INBOUND) and EIRMS exchange (OUTBOUND), with
-          who triggered it. Click a row for the full detail.
-        </p>
+        <p className="text-sm text-muted-foreground">Internal actions and EIRMS exchanges. Select a row to inspect it.</p>
       </header>
 
       <Card>
@@ -241,29 +238,7 @@ export function AuditPage() {
                 </TableBody>
               </Table>
 
-              <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
-                <span>
-                  Page {page} of {pageCount}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={offset === 0}
-                    onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={offset + PAGE_SIZE >= total}
-                    onClick={() => setOffset(offset + PAGE_SIZE)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <TablePagination page={page} pageCount={pageCount} total={total} shown={items.length} onPage={(next) => setOffset((next - 1) * PAGE_SIZE)} />
             </>
           )}
         </CardContent>

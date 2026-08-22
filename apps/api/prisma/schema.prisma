@@ -34,6 +34,45 @@ enum LegalDocumentStatus {
   REJECTED
 }
 
+enum TaxCodeType {
+  STANDARD
+  ZERO_RATED
+  EXEMPT
+  OTHER
+}
+
+model TaxCode {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  rate        Float
+  type        TaxCodeType
+  description String?
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([active])
+  @@map("tax_codes")
+}
+
+/// Global numeric business rules. Stable `code` values are consumed by
+/// backend services; labels and descriptions are presentation metadata.
+model SystemRule {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  value       Float
+  unit        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active])
+  @@map("system_rules")
+}
+
 /// Tenant root. Every operational row belongs to exactly one Merchant.
 /// SUPER_ADMIN (back-office) users have no merchant — they're cross-tenant.
 model Merchant {
@@ -71,27 +110,27 @@ model Merchant {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  branches       Branch[]
-  users          User[]
-  buyers         Buyer[]
-  inventoryItems InventoryItem[]
-  inventoryCategories InventoryCategory[]
-  invoices       Invoice[]
-  invoiceDrafts  InvoiceDraft[]
-  receipts       Receipt[]
-  auditLogs      AuditLog[]
-  stockMovements StockMovement[]
-  exports        MerchantExport[]
-  stores         Store[]
-  vendors        Vendor[]
-  stockPurchases StockPurchase[]
-  stockReservations StockReservation[]
-  consentGrants  ConsentGrant[]
-  harmonizationCodes HarmonizationCode[]
-  scheduledReports ScheduledReport[]
-  scheduledReportRuns ScheduledReportRun[]
+  branches             Branch[]
+  users                User[]
+  buyers               Buyer[]
+  inventoryItems       InventoryItem[]
+  inventoryCategories  InventoryCategory[]
+  invoices             Invoice[]
+  invoiceDrafts        InvoiceDraft[]
+  receipts             Receipt[]
+  auditLogs            AuditLog[]
+  stockMovements       StockMovement[]
+  exports              MerchantExport[]
+  stores               Store[]
+  vendors              Vendor[]
+  stockPurchases       StockPurchase[]
+  stockReservations    StockReservation[]
+  consentGrants        ConsentGrant[]
+  harmonizationCodes   HarmonizationCode[]
+  scheduledReports     ScheduledReport[]
+  scheduledReportRuns  ScheduledReportRun[]
   invoiceCancellations InvoiceCancellation[]
-  legalDocuments MerchantLegalDocument[]
+  legalDocuments       MerchantLegalDocument[]
 
   @@map("merchants")
 }
@@ -145,24 +184,24 @@ model Branch {
   rejectedAt      DateTime?
   rejectedBy      String?
   rejectionReason String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  users          User[]
-  branchAccess   UserBranch[]
-  invoices       Invoice[]
-  invoiceDrafts  InvoiceDraft[]
-  receipts       Receipt[]
-  auditLogs      AuditLog[]
-  stockMovements StockMovement[]
-  inventoryItems InventoryItem[]
-  certificate    BranchCertificate?
-  stores         Store[]
-  stockPurchases StockPurchase[]
-  stockReservations StockReservation[]
-  itemPrices     BranchItemPrice[]
-  scheduledReports ScheduledReport[]
+  users                User[]
+  branchAccess         UserBranch[]
+  invoices             Invoice[]
+  invoiceDrafts        InvoiceDraft[]
+  receipts             Receipt[]
+  auditLogs            AuditLog[]
+  stockMovements       StockMovement[]
+  inventoryItems       InventoryItem[]
+  certificate          BranchCertificate?
+  stores               Store[]
+  stockPurchases       StockPurchase[]
+  stockReservations    StockReservation[]
+  itemPrices           BranchItemPrice[]
+  scheduledReports     ScheduledReport[]
   invoiceCancellations InvoiceCancellation[]
 
   @@map("branches")
@@ -237,8 +276,8 @@ model User {
   lockedUntil      DateTime?
   emailVerifiedAt  DateTime?
   googleSubject    String?   @unique
-  phone             String?
-  phoneVerifiedAt   DateTime?
+  phone            String?
+  phoneVerifiedAt  DateTime?
   language         String    @default("en")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -255,14 +294,14 @@ model User {
   branchId   String?
   branch     Branch?   @relation(fields: [branchId], references: [id])
 
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
-  authChallenges      AuthChallenge[]
-  legalDocuments      MerchantLegalDocument[] @relation("LegalDocumentApplicant")
+  refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
+  authChallenges         AuthChallenge[]
+  legalDocuments         MerchantLegalDocument[] @relation("LegalDocumentApplicant")
   reviewedLegalDocuments MerchantLegalDocument[] @relation("LegalDocumentReviewer")
-  branchAccess        UserBranch[]
+  branchAccess           UserBranch[]
   // Consent grants this user requested as a SUPER_ADMIN (cross-tenant access).
-  consentRequests     ConsentGrant[] @relation("ConsentRequester")
+  consentRequests        ConsentGrant[]          @relation("ConsentRequester")
 
   @@map("users")
 }
@@ -271,22 +310,22 @@ model User {
 /// bytes live outside the public web root; only this opaque storage key is
 /// persisted. Original names are retained only after basename sanitisation.
 model MerchantLegalDocument {
-  id           String   @id @default(cuid())
-  merchantId   String
-  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User     @relation("LegalDocumentApplicant", fields: [userId], references: [id], onDelete: Cascade)
-  storageKey   String   @unique
-  originalName String
-  mediaType    String
-  sizeBytes    Int
-  sha256       String
-  status       LegalDocumentStatus @default(PENDING)
-  reviewedBy   String?
-  reviewer     User?    @relation("LegalDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  reviewedAt   DateTime?
+  id              String              @id @default(cuid())
+  merchantId      String
+  merchant        Merchant            @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                @relation("LegalDocumentApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  storageKey      String              @unique
+  originalName    String
+  mediaType       String
+  sizeBytes       Int
+  sha256          String
+  status          LegalDocumentStatus @default(PENDING)
+  reviewedBy      String?
+  reviewer        User?               @relation("LegalDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
   rejectionReason String?
-  createdAt    DateTime @default(now())
+  createdAt       DateTime            @default(now())
 
   @@index([merchantId])
   @@index([userId])
@@ -297,15 +336,15 @@ model MerchantLegalDocument {
 /// Single-purpose OTP challenge. OTPs are bcrypt-hashed, single-use, expire,
 /// and are scoped to one user and one authentication transition.
 model AuthChallenge {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        AuthChallengeType
-  otpHash     String
-  attempts    Int               @default(0)
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime          @default(now())
+  id         String            @id @default(cuid())
+  userId     String
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       AuthChallengeType
+  otpHash    String
+  attempts   Int               @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime          @default(now())
 
   @@index([userId, type, consumedAt, createdAt])
   @@index([expiresAt])
@@ -404,27 +443,27 @@ model Buyer {
 }
 
 model InventoryItem {
-  id              String  @id @default(cuid())
-  code            String
-  sku             String?
+  id                String             @id @default(cuid())
+  code              String
+  sku               String?
   /// UPC / EAN / GTIN — the barcode number on the physical package. Optional,
   /// but when present it unlocks the barcode-scan sale flow: cashier scans →
   /// exact-match lookup adds the line to the cart. Unique within a
   /// (merchantId, branchId) so scanning is never ambiguous within a shop.
-  upc             String?
-  description     String
-  longDescription String?
-  imageUrl        String?
-  categoryId      String?
-  category        InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  unit            String  @default("PCS")
-  unitPrice       Float
-  taxCode         String  @default("VAT15")
-  taxRate         Float   @default(15)
+  upc               String?
+  description       String
+  longDescription   String?
+  imageUrl          String?
+  categoryId        String?
+  category          InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  unit              String             @default("PCS")
+  unitPrice         Float
+  taxCode           String             @default("VAT15")
+  taxRate           Float              @default(15)
   harmonizationCode String?
-  exciseRate      Float?
-  nature          String  @default("goods") // "goods" | "service" — drives withholding + the no-mixing rule
-  active          Boolean @default(true)
+  exciseRate        Float?
+  nature            String             @default("goods") // "goods" | "service" — drives withholding + the no-mixing rule
+  active            Boolean            @default(true)
 
   // On-hand lives only in InventoryStock, per store. No denormalised total
   // here — it would be a cross-branch sum on a merchant-wide catalogue.
@@ -479,7 +518,7 @@ model InventoryCategory {
   updatedAt   DateTime @updatedAt
 
   merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchant   Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   items      InventoryItem[]
 
   @@unique([merchantId, name])
@@ -550,10 +589,10 @@ model StockMovement {
   /// Which store the delta applied to. Nullable — old rows written before
   /// the multi-store expansion have no store; new writes always set it when
   /// the item is branch-scoped.
-  storeId String?
-  store   Store?  @relation(fields: [storeId], references: [id])
+  storeId        String?
+  store          Store?             @relation(fields: [storeId], references: [id])
   /// Pairs the TRANSFER_OUT/TRANSFER_IN rows of one transfer. Null elsewhere.
-  transferId String?
+  transferId     String?
   /// Backlink to a StockPurchaseItem for RESTOCK rows generated by a
   /// purchase. Null for manual adjustments and sales.
   purchaseItemId String?
@@ -604,13 +643,13 @@ model Store {
 /// InventoryItem.stockQuantity is the SUM of these — maintained inside every
 /// write transaction so pre-multi-store readers keep working.
 model InventoryStock {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
   storeId         String
-  store           Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  quantity        Float    @default(0)
-  updatedAt       DateTime @updatedAt
+  store           Store         @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  quantity        Float         @default(0)
+  updatedAt       DateTime      @updatedAt
 
   @@unique([inventoryItemId, storeId])
   @@index([storeId])
@@ -701,13 +740,13 @@ model StockPurchase {
 }
 
 model StockPurchaseItem {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   purchaseId      String
   purchase        StockPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
   storeId         String
-  store           Store    @relation(fields: [storeId], references: [id])
+  store           Store         @relation(fields: [storeId], references: [id])
   quantity        Float
   unitCost        Float
   /// Denormalized quantity * unitCost so purchase-total queries don't have
@@ -728,13 +767,13 @@ model StockPurchaseItem {
 /// so a background sweeper isn't strictly required; a daily housekeeping
 /// delete is enough.
 model StockReservation {
-  id              String   @id @default(cuid())
+  id              String        @id @default(cuid())
   merchantId      String
-  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  merchant        Merchant      @relation(fields: [merchantId], references: [id])
   branchId        String
-  branch          Branch   @relation(fields: [branchId], references: [id])
+  branch          Branch        @relation(fields: [branchId], references: [id])
   storeId         String
-  store           Store    @relation(fields: [storeId], references: [id])
+  store           Store         @relation(fields: [storeId], references: [id])
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
   quantity        Float
@@ -744,8 +783,8 @@ model StockReservation {
   userId          String?
   actorEmail      String?
   expiresAt       DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([inventoryItemId, expiresAt])
   @@index([cartSessionId])
@@ -791,33 +830,37 @@ enum DraftSyncStatus {
 }
 
 model Invoice {
-  id               String        @id @default(cuid())
-  irn              String        @unique
-  documentNumber   String
-  documentType     String
-  documentDate     String
-  ackDate          String
-  status           InvoiceStatus @default(ACCEPTED)
-  eirmsStatus      String
-  signedQR         String
-  signedInvoice    String
-  preTaxValue      Float
-  taxValue         Float
-  totalValue       Float
-  withholdValue    Float         @default(0)
-  currency         String        @default("ETB")
-  transactionType  String
-  natureOfSupplies String
-  paymentMode      String
-  paymentTerm      String
-  cashierName      String
-  salespersonName  String
-  invoiceCounter   Int
-  rawRequest       Json
-  rawResponse      Json
-  source           InvoiceSource @default(EIRMS)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                   String        @id @default(cuid())
+  irn                  String        @unique
+  documentNumber       String
+  documentType         String
+  documentDate         String
+  ackDate              String
+  status               InvoiceStatus @default(ACCEPTED)
+  eirmsStatus          String
+  signedQR             String
+  signedInvoice        String
+  preTaxValue          Float
+  taxValue             Float
+  totalValue           Float
+  withholdValue        Float         @default(0)
+  /// Issue-time withholding rule snapshots. Nullable for historical rows.
+  withholdingRate      Float?
+  withholdingBase      Float?
+  withholdingThreshold Float?
+  currency             String        @default("ETB")
+  transactionType      String
+  natureOfSupplies     String
+  paymentMode          String
+  paymentTerm          String
+  cashierName          String
+  salespersonName      String
+  invoiceCounter       Int
+  rawRequest           Json
+  rawResponse          Json
+  source               InvoiceSource @default(EIRMS)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   paymentStatus InvoicePaymentStatus @default(UNPAID)
   paidAmount    Float                @default(0)
@@ -845,15 +888,19 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id          String @id @default(cuid())
+  id          String       @id @default(cuid())
   lineNumber  Int
   itemCode    String
   description String
   unit        String
   quantity    Float
   unitPrice   Float
-  discount    Float  @default(0)
+  discount    Float        @default(0)
   taxCode     String
+  /// Issue-time snapshots: never resolved from mutable configuration when
+  /// reading historical invoices. Nullable for rows issued before migration.
+  taxRate     Float?
+  taxType     TaxCodeType?
   taxAmount   Float
   preTaxValue Float
   totalAmount Float
@@ -1132,19 +1179,19 @@ model MerchantExport {
 /// `recipientDomain` is denormalised for per-domain aggregation (bounce rate
 /// per customer domain, deliverability alerts).
 model EmailEvent {
-  id              String   @id @default(cuid())
-  providerId      String   @unique  // Resend email id
+  id              String    @id @default(cuid())
+  providerId      String    @unique // Resend email id
   recipient       String
   recipientDomain String
   subject         String?
-  status          String   @default("sent")
+  status          String    @default("sent")
   bouncedAt       DateTime?
-  complainedAt   DateTime?
+  complainedAt    DateTime?
   deliveredAt     DateTime?
   openedAt        DateTime?
   bounceReason    String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([recipientDomain, createdAt])
   @@index([status, createdAt])
@@ -1166,14 +1213,14 @@ model Language {
 }
 
 model TranslationOverride {
-  id        String   @id @default(cuid())
-  language  String
+  id          String   @id @default(cuid())
+  language    String
   languageRef Language @relation(fields: [language], references: [code], onDelete: Cascade)
-  key       String
-  value     String
-  updatedBy String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  key         String
+  value       String
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([language, key])
   @@index([language])
@@ -1189,14 +1236,14 @@ model TranslationOverride {
 /// sha256 of the raw token (raw value only ever lives in the email, mirroring
 /// PasswordResetToken).
 model ConsentGrant {
-  id           String @id @default(cuid())
+  id           String   @id @default(cuid())
   superAdminId String
-  superAdmin   User   @relation("ConsentRequester", fields: [superAdminId], references: [id], onDelete: Cascade)
+  superAdmin   User     @relation("ConsentRequester", fields: [superAdminId], references: [id], onDelete: Cascade)
   merchantId   String
   merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   scopes ConsentScope[]
-  status ConsentStatus @default(PENDING)
+  status ConsentStatus  @default(PENDING)
 
   // Duration the super-admin asked for; the final granted window is chosen by
   // the merchant admin on accept (≤ proposed, ≤ 24h). expiresAt = decidedAt +
@@ -1315,14 +1362,14 @@ model ScheduledReport {
 /// One delivery attempt, and the delta ledger: the union of SENT and
 /// SKIPPED_EMPTY windows is what proves the timeline has no gaps.
 model ScheduledReportRun {
-  id       String          @id @default(cuid())
-  reportId String
-  report   ScheduledReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id         String          @id @default(cuid())
+  reportId   String
+  report     ScheduledReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
   /// Worker reads tenancy off this row, not off the job payload.
   merchantId String
-  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchant   Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
-  status ReportRunStatus @default(PENDING)
+  status       ReportRunStatus @default(PENDING)
   /// Half-open. Written before aggregating so a retry re-sends the identical
   /// window rather than a drifted one.
   windowStart  DateTime

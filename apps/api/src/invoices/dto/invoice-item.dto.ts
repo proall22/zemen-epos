@@ -1,4 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { TaxCodeType } from '@prisma/client';
 import {
   IsBoolean,
   IsInt,
@@ -9,6 +10,12 @@ import {
 } from 'class-validator';
 
 export class InvoiceItemDto {
+  /** Server-resolved issue-time snapshots; caller values are ignored. */
+  @ApiHideProperty()
+  resolvedTaxRate?: number;
+
+  @ApiHideProperty()
+  resolvedTaxType?: TaxCodeType;
   @ApiProperty({ example: 1 })
   @IsInt()
   @Min(1)

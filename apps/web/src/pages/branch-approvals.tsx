@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Building2,
-  CheckCircle2,
   CircleCheck,
   CircleX,
   RefreshCw,
@@ -32,6 +31,7 @@ import {
 } from "@/lib/resources";
 import { readRequestError } from "@/lib/api-errors";
 import type { PendingBranchReview } from "@/lib/types";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 
 /** Global review surface for additional branches created by approved merchants. */
 export function BranchApprovalsPage() {
@@ -39,11 +39,13 @@ export function BranchApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setRows(await listPendingBranchReviews());
+      setPage(1);
       setError(null);
     } catch (err) {
       setError(readRequestError(err, "Unable to load branch approvals."));
@@ -85,7 +87,7 @@ export function BranchApprovalsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
@@ -110,17 +112,11 @@ export function BranchApprovalsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Pending branches</CardTitle>
-          <CardDescription>
-            The merchant's original main branch is approved with merchant
-            registration. Later branches appear here.
-          </CardDescription>
+          <CardDescription>Additional merchant branches awaiting a decision.</CardDescription>
         </CardHeader>
         <CardContent>
           {!loading && rows.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-              <CheckCircle2 className="size-8 text-emerald-500" />
-              <span>No branches awaiting review.</span>
-            </div>
+            <p className="py-10 text-center text-sm text-muted-foreground">No branches awaiting review.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -133,7 +129,7 @@ export function BranchApprovalsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
+                {rows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>
                       <div className="font-medium">{row.merchantName}</div>
@@ -177,6 +173,7 @@ export function BranchApprovalsPage() {
               </TableBody>
             </Table>
           )}
+          {!loading && <TablePagination page={page} pageCount={Math.ceil(rows.length / TABLE_PAGE_SIZE)} total={rows.length} shown={rows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).length} onPage={setPage} />}
         </CardContent>
       </Card>
     </div>

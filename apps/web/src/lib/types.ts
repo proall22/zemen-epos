@@ -844,6 +844,8 @@ export interface InvoiceLine {
   unitPrice: number;
   discount: number;
   taxCode: string;
+  taxRate: number | null;
+  taxType: "STANDARD" | "ZERO_RATED" | "EXEMPT" | "OTHER" | null;
   taxAmount: number;
   preTaxValue: number;
   totalAmount: number;
@@ -924,6 +926,9 @@ export interface Invoice {
   taxValue: number;
   totalValue: number;
   withholdValue: number;
+  withholdingRate: number | null;
+  withholdingBase: number | null;
+  withholdingThreshold: number | null;
   currency: string;
   transactionType: string;
   natureOfSupplies: string;

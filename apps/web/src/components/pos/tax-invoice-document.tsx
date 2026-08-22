@@ -13,14 +13,11 @@ import {
   isPlaceholderTin,
   lineExcise,
   nonTaxableSuffix,
-  vatRateForTaxCode,
+  vatRateForLine,
 } from "@/lib/invoice-types";
 import { amountInWords } from "@/lib/number-to-words";
 import type { Invoice, Receipt } from "@/lib/types";
-import {
-  computeWithholding,
-  type WithholdTxType,
-} from "@/lib/withholding";
+import { computeWithholding, type WithholdTxType } from "@/lib/withholding";
 
 interface DocTitle {
   en: string;
@@ -105,7 +102,10 @@ export function TaxInvoiceDocument({
   const totalExcise = round2(
     invoice.items.reduce((s, l) => s + lineExcise(l), 0),
   );
-  const totalDiscount = invoice.items.reduce((s, l) => s + (l.discount || 0), 0);
+  const totalDiscount = invoice.items.reduce(
+    (s, l) => s + (l.discount || 0),
+    0,
+  );
   // Gross line total (before discount) — matches the "Total Amount" column.
   const grossTotal = round2(
     invoice.items.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
@@ -115,12 +115,12 @@ export function TaxInvoiceDocument({
   // plus excise, matching what the register sends to MoR.
   const taxableTotal = round2(
     invoice.items
-      .filter((l) => vatRateForTaxCode(l.taxCode) > 0)
+      .filter((l) => vatRateForLine(l) > 0)
       .reduce((s, l) => s + l.preTaxValue + lineExcise(l), 0),
   );
   const nonTaxableTotal = round2(
     invoice.items
-      .filter((l) => vatRateForTaxCode(l.taxCode) === 0)
+      .filter((l) => vatRateForLine(l) === 0)
       .reduce((s, l) => s + l.preTaxValue, 0),
   );
   // MoR folds excise into `taxValue`; the VAT row and the B2G withholding
@@ -133,11 +133,18 @@ export function TaxInvoiceDocument({
   // Withholding is display-only: NOT deducted from the total and NOT sent to
   // EIRMS. Both components print on their own fixed row (0.00 when they don't
   // apply) and can co-occur on a B2G invoice.
-  const withholding = computeWithholding(
+  const legacyWithholding = computeWithholding(
     taxableTotal,
     vatValue,
     txType as WithholdTxType,
   );
+  const withholding = {
+    ...legacyWithholding,
+    income:
+      invoice.withholdingRate != null
+        ? invoice.withholdValue
+        : legacyWithholding.income,
+  };
 
   const paymentMode = receipt?.modeOfPayment || invoice.paymentMode || "CASH";
 
@@ -160,7 +167,10 @@ export function TaxInvoiceDocument({
           <div className="text-neutral-700">{SELLER_INFO.city}</div>
         </div>
         <div className="flex flex-col text-[11px]">
-          <MetaRow label="የደረሰኝ ቁጥር/Invoice No" value={invoice.documentNumber} />
+          <MetaRow
+            label="የደረሰኝ ቁጥር/Invoice No"
+            value={invoice.documentNumber}
+          />
           <MetaRow label="ቀን/Date" value={date} />
           <MetaRow label="ሰዓት/Time" value={time} last />
         </div>
@@ -173,9 +183,7 @@ export function TaxInvoiceDocument({
             <div className="text-[13px] font-semibold">{title.am}</div>
           )}
           <div className="text-sm">{title.en}</div>
-          <div className="text-xs text-neutral-600">
-            የሽያጭ አይነት ({txType})
-          </div>
+          <div className="text-xs text-neutral-600">የሽያጭ አይነት ({txType})</div>
           {invoice.status === "CANCELLED" && (
             <div className="mt-1 inline-block rounded-sm border border-red-400 bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-700">
               Cancelled
@@ -385,8 +393,14 @@ export function TaxInvoiceDocument({
         )}
         {receipt?.receiptNumber && (
           <div className="mt-1 text-[10px] text-neutral-600">
-            Receipt #: <span className="font-mono">{receipt.receiptNumber}</span>
-            {receipt.rrn && <> · RRN: <span className="font-mono">{receipt.rrn}</span></>}
+            Receipt #:{" "}
+            <span className="font-mono">{receipt.receiptNumber}</span>
+            {receipt.rrn && (
+              <>
+                {" "}
+                · RRN: <span className="font-mono">{receipt.rrn}</span>
+              </>
+            )}
           </div>
         )}
       </section>
@@ -397,9 +411,7 @@ export function TaxInvoiceDocument({
           <div className="bg-neutral-100 px-2 py-1 text-[11px] font-semibold">
             የሻጭ መረጃ / Seller Information
           </div>
-          <div className="mt-2 text-[10px] text-neutral-600">
-            የሻጩ ስም እና ፊርማ
-          </div>
+          <div className="mt-2 text-[10px] text-neutral-600">የሻጩ ስም እና ፊርማ</div>
           <div className="min-h-[28px] border-b border-neutral-300 pt-3">
             {SELLER_INFO.tradeName || SELLER_INFO.legalName}
           </div>
@@ -514,7 +526,11 @@ function PartyBlock({
         <AddrField am="ቤት ቁ. / H.No" value={houseNumber} />
       </div>
 
-      <Line label={`${role}'s Phone No`} labelAm={`የ${roleAm} ስልክ ቁጥር`} value={phone} />
+      <Line
+        label={`${role}'s Phone No`}
+        labelAm={`የ${roleAm} ስልክ ቁጥር`}
+        value={phone}
+      />
       <Line
         label={`${role}'s VAT Reg.No`}
         labelAm={`የ${roleAm} ተ.እ.ታ ቁጥር`}
@@ -529,9 +545,7 @@ function PartyBlock({
         />
         {subTin ? (
           <Line
-            label={
-              side === "seller" ? "Seller' Sub TIN" : "Customer's Sub TIN"
-            }
+            label={side === "seller" ? "Seller' Sub TIN" : "Customer's Sub TIN"}
             labelAm={`የ${roleAm} የግብር ከፋይ ንዑስ መለያ ቁጥር`}
             value={subTin}
             inline

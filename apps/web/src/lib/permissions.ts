@@ -16,7 +16,6 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   "merchant.view",
   "merchant.create",
   "merchant.update",
-  "merchant.export",
   "branch.view",
   "branch.create",
   "branch.update",
@@ -29,13 +28,8 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   "dashboard.system",
   "consent.request",
   "consent.manage",
-  "invoice.view",
-  "receipt.view",
-  "withholding.view",
-  "inventory.view",
-  "store.view",
-  "vendor.view",
-  "purchase.view",
+  "configuration.view",
+  "configuration.manage",
 ];
 
 /**

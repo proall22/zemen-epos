@@ -1,7 +1,7 @@
 import { useSellerInfo } from "@/lib/auth";
 import { sellerInfoFromDocument } from "@/lib/seller-info";
 import { formatInvoiceDate, formatInvoiceTime24 } from "@/lib/invoice-date";
-import { nonTaxableSuffix, vatRateForTaxCode } from "@/lib/invoice-types";
+import { nonTaxableSuffix, vatRateForLine } from "@/lib/invoice-types";
 import type { Receipt } from "@/lib/types";
 
 /**
@@ -61,10 +61,10 @@ export function PosReceiptDocument({
   // Nested invoices may arrive without their `items` relation, so default it.
   const allItems = receipt.invoices.flatMap((line) => line.invoice.items ?? []);
   const taxableTotal = allItems
-    .filter((l) => vatRateForTaxCode(l.taxCode) > 0)
+    .filter((l) => vatRateForLine(l) > 0)
     .reduce((s, l) => s + l.preTaxValue, 0);
   const exemptTotal = allItems
-    .filter((l) => vatRateForTaxCode(l.taxCode) === 0)
+    .filter((l) => vatRateForLine(l) === 0)
     .reduce((s, l) => s + l.preTaxValue, 0);
   const vatValue = receipt.invoices.reduce((s, l) => s + l.invoice.taxValue, 0);
 
@@ -231,7 +231,9 @@ function Row({
   bold?: boolean;
 }) {
   return (
-    <div className={`flex justify-between gap-2 ${bold ? "font-semibold" : ""}`}>
+    <div
+      className={`flex justify-between gap-2 ${bold ? "font-semibold" : ""}`}
+    >
       <span>{label}</span>
       <span className="break-all text-right tabular-nums">{value}</span>
     </div>

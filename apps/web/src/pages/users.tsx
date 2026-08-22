@@ -31,6 +31,7 @@ import {
   updateUser,
 } from "@/lib/resources";
 import { ROLE_LABELS, type ManagedUser, type SafeBranch } from "@/lib/types";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 
 /** Pure helper: is the user currently locked out? */
 function isLocked(u: ManagedUser): boolean {
@@ -44,6 +45,7 @@ export function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
   const [editing, setEditing] = useState<ManagedUser | null>(null);
+  const [page, setPage] = useState(1);
   const [branchesById, setBranchesById] = useState<Map<string, SafeBranch>>(
     new Map(),
   );
@@ -67,6 +69,7 @@ export function UsersPage() {
     setError(null);
     try {
       setUsers(await listUsers());
+      setPage(1);
     } catch (e) {
       setError(readRequestError(e, "Unable to load user information."));
     } finally {
@@ -94,7 +97,7 @@ export function UsersPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <p className="text-[13px] font-medium text-muted-foreground">
@@ -106,10 +109,7 @@ export function UsersPage() {
             </span>
             Users
           </h1>
-          <p className="text-[13px] text-muted-foreground">
-            Manage who can sign in and what each person can do. Roles bundle
-            permissions for invoices, receipts, inventory, and access itself.
-          </p>
+          <p className="text-[13px] text-muted-foreground">Manage user access, roles, branch assignments, and account status.</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -169,7 +169,7 @@ export function UsersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u) => {
+                {users.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).map((u) => {
                   const isSuperAdmin = u.role === "SUPER_ADMIN";
                   return (
                     <TableRow key={u.id}>
@@ -256,6 +256,7 @@ export function UsersPage() {
               </TableBody>
             </Table>
           )}
+          {!loading && <TablePagination page={page} pageCount={Math.ceil(users.length / TABLE_PAGE_SIZE)} total={users.length} shown={users.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).length} onPage={setPage} />}
         </CardContent>
       </Card>
 

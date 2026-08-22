@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 
+import { PrismaService } from '../prisma/prisma.service';
 import type { JwtPayload } from './auth.types';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
@@ -16,9 +17,10 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly jwt: JwtService,
+    private readonly prisma: PrismaService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -53,7 +55,46 @@ export class JwtAuthGuard implements CanActivate {
       ) {
         throw new Error('Not an access token');
       }
-      (request as Request & { user: JwtPayload }).user = payload;
+      // JWT claims identify the session, but mutable authorization state must
+      // come from the database. This makes disable, role change, merchant
+      // reassignment, and branch reassignment effective immediately instead
+      // of leaving the old privilege live until token expiry.
+      const current = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          active: true,
+          emailVerifiedAt: true,
+          merchantId: true,
+          branchId: true,
+        },
+      });
+      if (!current?.active || !current.emailVerifiedAt) {
+        throw new Error('Account is disabled or unverified');
+      }
+      if (current.role !== 'SUPER_ADMIN' && !current.merchantId) {
+        throw new Error('Merchant assignment is missing');
+      }
+      if (current.branchId) {
+        const branch = await this.prisma.branch.findFirst({
+          where: {
+            id: current.branchId,
+            merchantId: current.merchantId ?? undefined,
+            active: true,
+          },
+          select: { id: true },
+        });
+        if (!branch) throw new Error('Branch assignment is no longer valid');
+      }
+      (request as Request & { user: JwtPayload }).user = {
+        sub: current.id,
+        email: current.email,
+        role: current.role,
+        merchantId: current.merchantId,
+        branchId: current.branchId,
+      };
       return true;
     } catch {
       throw new UnauthorizedException(

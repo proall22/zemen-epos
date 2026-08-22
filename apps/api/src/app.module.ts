@@ -44,6 +44,7 @@ import { authVerificationValidationSchema } from './auth/auth-verification.confi
 import { TurnstileModule } from './security/turnstile/turnstile.module';
 import { SignupModule } from './signup/signup.module';
 import { StatusModule } from './status/status.module';
+import { SystemConfigurationModule } from './system-configuration/system-configuration.module';
 import { UsersModule } from './users/users.module';
 import { vaultValidationSchema } from './vault/vault.config';
 import { VaultModule } from './vault/vault.module';
@@ -110,6 +111,7 @@ import { VaultModule } from './vault/vault.module';
     AppThrottlerModule,
     TurnstileModule,
     AuditModule,
+    SystemConfigurationModule,
     // Global — needs RequestContextService from AuditModule above.
     CommonModule,
     // Global — AuditModule must be loaded first so VaultService can record

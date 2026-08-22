@@ -94,7 +94,6 @@ export const NAV_ROUTES: NavRoute[] = [
     sectionKey: "nav.workflow",
     superAdminSectionKey: "nav.operations",
     sidebarRoles: [
-      "SUPER_ADMIN",
       "MERCHANT_ADMIN",
       "BRANCH_ADMIN",
       "ACCOUNTANT",
@@ -116,7 +115,6 @@ export const NAV_ROUTES: NavRoute[] = [
     sectionKey: "nav.workflow",
     superAdminSectionKey: "nav.operations",
     sidebarRoles: [
-      "SUPER_ADMIN",
       "MERCHANT_ADMIN",
       "BRANCH_ADMIN",
       "ACCOUNTANT",
@@ -137,7 +135,7 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "withholding.view",
     sectionKey: "nav.workflow",
     superAdminSectionKey: "nav.operations",
-    sidebarRoles: ["SUPER_ADMIN", "MERCHANT_ADMIN", "ACCOUNTANT", "SUPPORT"],
+    sidebarRoles: ["MERCHANT_ADMIN", "ACCOUNTANT", "SUPPORT"],
   },
 
   {
@@ -147,13 +145,40 @@ export const NAV_ROUTES: NavRoute[] = [
     perm: "inventory.view",
     sectionKey: "nav.catalogue",
     sidebarRoles: [
-      "SUPER_ADMIN",
       "MERCHANT_ADMIN",
       "BRANCH_ADMIN",
       "ACCOUNTANT",
       "STORE_KEEPER",
     ],
     end: true,
+  },
+
+  {
+    to: "/system-configuration/tax-codes",
+    labelKey: "nav.taxCodes",
+    icon: Percent,
+    perm: "configuration.view",
+    sectionKey: "nav.systemConfiguration",
+    superAdminSectionKey: "nav.systemConfiguration",
+    sidebarRoles: ["SUPER_ADMIN"],
+  },
+  {
+    to: "/system-configuration/withholding",
+    labelKey: "nav.withholdingConfiguration",
+    icon: Settings,
+    perm: "configuration.view",
+    sectionKey: "nav.systemConfiguration",
+    superAdminSectionKey: "nav.systemConfiguration",
+    sidebarRoles: ["SUPER_ADMIN"],
+  },
+  {
+    to: "/system-configuration/supply",
+    labelKey: "nav.supplyConfiguration",
+    icon: Package,
+    perm: "configuration.view",
+    sectionKey: "nav.systemConfiguration",
+    superAdminSectionKey: "nav.systemConfiguration",
+    sidebarRoles: ["SUPER_ADMIN"],
   },
   {
     to: "/inventory/stores",
@@ -309,6 +334,7 @@ export const NAV_ROUTES: NavRoute[] = [
 /** Sidebar section order. A section with no permitted routes is dropped. */
 export const NAV_SECTIONS = [
   "nav.platform",
+  "nav.systemConfiguration",
   "nav.operations",
   "nav.administration",
   "nav.insights",

@@ -9,7 +9,6 @@ import { type StockReservation } from '@prisma/client';
 
 import { RequestContextService } from '../audit/request-context.service';
 import { StoreResolverService } from '../common/store-resolver.service';
-import { merchantScope } from '../common/tenant-scope';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertReservationsDto } from './dto/reservation.dto';
 
@@ -136,6 +135,19 @@ export class ReservationsService {
         line.inventoryItemId,
         (requested.get(line.inventoryItemId) ?? 0) + line.quantity,
       );
+    }
+
+    // Every referenced item must belong to the authenticated merchant. The
+    // reservation row carries its own merchantId, so relying on the FK alone
+    // would allow a client-supplied inventoryItemId from another tenant.
+    const ownedItems = await this.prisma.inventoryItem.findMany({
+      where: { id: { in: [...requested.keys()] }, merchantId },
+      select: { id: true },
+    });
+    const ownedIds = new Set(ownedItems.map((item) => item.id));
+    const foreign = [...requested.keys()].find((id) => !ownedIds.has(id));
+    if (foreign) {
+      throw new NotFoundException(`Inventory item ${foreign} not found.`);
     }
 
     // Check availability + build the write set.

@@ -25,6 +25,10 @@
   "nav": {
     "platform": "መድረክ",
     "operations": "ኦፕሬሽኖች",
+    "systemConfiguration": "የስርዓት ውቅር",
+    "taxCodes": "የግብር ኮዶች",
+    "withholdingConfiguration": "ተቀናሽ ግብር",
+    "supplyConfiguration": "የአቅርቦት ውቅር",
     "administration": "አስተዳደር",
     "insights": "ግንዛቤዎች",
     "dashboard": "ዳሽቦርድ",

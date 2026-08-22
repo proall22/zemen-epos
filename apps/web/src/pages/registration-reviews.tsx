@@ -41,6 +41,7 @@ import {
   updateMerchant,
 } from "@/lib/resources";
 import type { LegalDocumentStatus, RegistrationReview } from "@/lib/types";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 
 export function RegistrationReviewsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,6 +73,7 @@ export function RegistrationReviewsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [page, setPage] = useState(1);
 
   async function refresh() {
     setLoading(true);
@@ -172,6 +174,7 @@ export function RegistrationReviewsPage() {
   function selectFilter(next: ReviewFilter) {
     setFilter(next);
     setSelected(null);
+    setPage(1);
     const params = new URLSearchParams(searchParams);
     params.delete("merchant");
     params.set("status", next.toLowerCase().replace(/_/g, "-"));
@@ -179,7 +182,7 @@ export function RegistrationReviewsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
@@ -188,9 +191,7 @@ export function RegistrationReviewsPage() {
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
             Registration Requests
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Review private legal documents and applicant verification status.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Review applicant verification and registration documents.</p>
         </div>
         <Button
           variant="outline"
@@ -204,7 +205,7 @@ export function RegistrationReviewsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
-            <FileCheck2 className="size-5 text-primary" /> Notifications
+            <FileCheck2 className="size-5 text-primary" /> Requests
             <Badge variant="warning">{pending} pending</Badge>
           </CardTitle>
           <div className="flex flex-wrap justify-end gap-2">
@@ -242,7 +243,7 @@ export function RegistrationReviewsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRows.map((row) => (
+              {visibleRows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).map((row) => (
                 <TableRow key={row.document.id}>
                   <TableCell>
                     <strong className="block">
@@ -289,6 +290,7 @@ export function RegistrationReviewsPage() {
               )}
             </TableBody>
           </Table>
+          {!loading && <TablePagination page={page} pageCount={Math.ceil(visibleRows.length / TABLE_PAGE_SIZE)} total={visibleRows.length} shown={visibleRows.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE).length} onPage={setPage} />}
         </CardContent>
       </Card>
 

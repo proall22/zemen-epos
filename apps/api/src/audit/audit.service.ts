@@ -28,6 +28,9 @@ export interface InboundEntry {
   statusCode?: number;
   success: boolean;
   errorMessage?: string;
+  summary?: string;
+  requestBody?: unknown;
+  responseBody?: unknown;
   actor?: { sub: string; email: string; role: string } | null;
 }
 
@@ -112,7 +115,9 @@ export class AuditService implements OnModuleInit {
       statusCode: entry.statusCode ?? null,
       success: entry.success,
       errorMessage: entry.errorMessage ?? null,
-      responseBody: challenge,
+      summary: entry.summary ?? null,
+      requestBody: entry.requestBody === undefined ? Prisma.JsonNull : sanitiseBody(entry.requestBody) as Prisma.InputJsonValue,
+      responseBody: entry.responseBody === undefined ? challenge : sanitiseBody(entry.responseBody) as Prisma.InputJsonValue,
       ip: ctx?.ip ?? null,
       userAgent: ctx?.userAgent ?? null,
     };

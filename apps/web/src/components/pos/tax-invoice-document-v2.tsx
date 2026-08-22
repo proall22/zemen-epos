@@ -16,10 +16,7 @@ import {
 import { amountInWords } from "@/lib/number-to-words";
 import type { Invoice } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import {
-  computeWithholding,
-  type WithholdTxType,
-} from "@/lib/withholding";
+import { computeWithholding, type WithholdTxType } from "@/lib/withholding";
 
 /** Zemen-ePos brand accent — the colour theme for this variant. */
 const ACCENT = "#5700FF";
@@ -72,7 +69,10 @@ export function TaxInvoiceDocumentV2({
   const time = formatInvoiceTime24(invoice.ackDate);
   const dateTime = time ? `${date} ${time}` : date;
 
-  const totalDiscount = invoice.items.reduce((s, l) => s + (l.discount || 0), 0);
+  const totalDiscount = invoice.items.reduce(
+    (s, l) => s + (l.discount || 0),
+    0,
+  );
   const totalExcise = round2(
     invoice.items.reduce((s, l) => s + lineExcise(l), 0),
   );
@@ -90,11 +90,18 @@ export function TaxInvoiceDocumentV2({
 
   // Display-only withholding (not deducted, not sent to EIRMS): 3% of the
   // taxable total on B2B/B2G over threshold, plus 50% of VAT on every B2G.
-  const withholding = computeWithholding(
+  const legacyWithholding = computeWithholding(
     taxableTotal,
     invoice.taxValue,
     txType as WithholdTxType,
   );
+  const withholding = {
+    ...legacyWithholding,
+    income:
+      invoice.withholdingRate != null
+        ? invoice.withholdValue
+        : legacyWithholding.income,
+  };
 
   const sellerAddress = [
     SELLER_INFO.region && `Region: ${SELLER_INFO.region}`,
@@ -292,7 +299,10 @@ export function TaxInvoiceDocumentV2({
                       {formatPaymentTerm(invoice.paymentTerm)}
                     </span>
                   </div>
-                  {formatPaymentDueDate(invoice.ackDate, invoice.paymentTerm) && (
+                  {formatPaymentDueDate(
+                    invoice.ackDate,
+                    invoice.paymentTerm,
+                  ) && (
                     <div className="flex justify-between">
                       <span className="text-slate-600">Due by:</span>
                       <span className="font-semibold tabular-nums">
@@ -363,7 +373,7 @@ export function TaxInvoiceDocumentV2({
               </div>
               {withholding.income > 0 && (
                 <SummaryRow
-                  label="ተቀናሽ ግብር / Withholding (3%):"
+                  label={`ተቀናሽ ግብር / Withholding (${invoice.withholdingRate ?? 3}%):`}
                   value={fmtNumber(withholding.income)}
                 />
               )}
@@ -518,9 +528,16 @@ function SummaryRow({
   bold?: boolean;
 }) {
   return (
-    <div className={cn("flex justify-between", border && "border-b border-slate-300 pb-2")}>
+    <div
+      className={cn(
+        "flex justify-between",
+        border && "border-b border-slate-300 pb-2",
+      )}
+    >
       <span className={cn("text-slate-700", bold && "font-bold")}>{label}</span>
-      <span className={cn("text-slate-900", bold ? "font-bold" : "font-semibold")}>
+      <span
+        className={cn("text-slate-900", bold ? "font-bold" : "font-semibold")}
+      >
         {value}
       </span>
     </div>

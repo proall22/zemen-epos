@@ -29,8 +29,17 @@ function makeService(ctxBranchId: string | null) {
     get: () => ({ requestId: 'r', merchantId: 'm-A', branchId: ctxBranchId }),
   } as unknown as RequestContextService;
   const svc = new ReceiptsService(
-    {} as never, {} as never, {} as never, prisma, {} as never,
-    {} as never, context, {} as never, {} as never, {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    prisma,
+    {} as never,
+    {} as never,
+    context,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   return { svc, seen };
 }

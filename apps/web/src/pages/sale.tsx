@@ -505,6 +505,23 @@ export function SalePage() {
         cartSessionId: cartSessionIdRef.current,
       };
 
+      // Preview with the same backend configuration service used by the
+      // registration path. This removes the browser's arithmetic from the
+      // trust boundary and ensures the issued-result UI reflects server data.
+      const calculated = await api<{
+        lines: Array<{ LineNumber: number; TaxCode: string; PreTaxValue: number; ExciseTaxValue: number; TaxAmount: number; TotalLineAmount: number }>;
+        taxValue: number; exciseValue: number; totalValue: number;
+      }>("/invoices/calculate", { method: "POST", body: JSON.stringify(payload) });
+      const calculatedByLine = new Map(calculated.lines.map((line) => [line.LineNumber, line]));
+      const serverItems = (payload.ItemList as Array<Record<string, unknown>>).map((line) => ({ ...line, ...calculatedByLine.get(Number(line.LineNumber)) }));
+      payload.ItemList = serverItems;
+      payload.ValueDetails = {
+        ...(payload.ValueDetails as Record<string, unknown>),
+        TaxValue: calculated.taxValue,
+        ExciseValue: calculated.exciseValue,
+        TotalValue: calculated.totalValue,
+      };
+
       const invoice = await api<Invoice>("/invoices", {
         method: "POST",
         body: JSON.stringify(payload),

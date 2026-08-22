@@ -36,6 +36,7 @@ import {
   SELLER_IDENTITY_INCLUDE,
 } from '../common/seller-identity';
 import { StoreResolverService } from '../common/store-resolver.service';
+import { SystemConfigurationService } from '../system-configuration/system-configuration.service';
 import {
   branchScope,
   merchantScope,
@@ -103,6 +104,7 @@ export class InvoicesService {
     private readonly signing: EirmsSigningService,
     private readonly reservations: ReservationsService,
     private readonly storeResolver: StoreResolverService,
+    private readonly systemConfiguration: SystemConfigurationService,
   ) {}
 
   /** Resolve the (merchantId, branchId) the caller must write under when
@@ -225,16 +227,19 @@ export class InvoicesService {
     // billed — that would take the net negative (refund > what was paid).
     // Almost always means the cashier fell back to the old "corrected-to
     // values" habit instead of the diff. DEB has no upper bound.
-    if (type !== 'CRE') return;
-
     const originalIrn = input.ReferenceDetails?.RelatedDocument?.trim();
     if (!originalIrn) return;
 
-    const original = await this.prisma.invoice.findUnique({
-      where: { irn: originalIrn },
+    const original = await this.prisma.invoice.findFirst({
+      where: { irn: originalIrn, ...tenantScope(this.context.get()) },
       include: { items: true },
     });
-    if (!original) return;
+    if (!original) {
+      // Do not distinguish missing from another tenant's document.
+      throw new NotFoundException('Related invoice not found.');
+    }
+
+    if (type !== 'CRE') return;
 
     // Chained memos (CRE on CRE, CRE on DEB) have no meaningful "original
     // total" ceiling — MoR is authoritative here. Skip our per-line and
@@ -369,8 +374,9 @@ export class InvoicesService {
     // Refuse for pending or disabled merchants — surfaces a clear message
     // instead of an opaque EIRMS auth failure later.
     await this.merchants.assertMerchantActive(tenant.merchantId);
-    await this.assertMemoAmountRule(input);
     this.assertSingleNature(input);
+    await this.applyConfiguredTax(input);
+    await this.assertMemoAmountRule(input);
     this.assertExciseHasHarmonizationCode(input);
     // cartSessionId is client-supplied; verify the caller actually owns the
     // session before we let it exclude reservations from availability or
@@ -503,6 +509,56 @@ export class InvoicesService {
     throw new BadGatewayException({
       message: 'EIRMS rejected the invoice even after sequence correction',
     });
+  }
+
+  /** The backend owns invoice arithmetic. Client totals are overwritten using
+   * active global tax configuration before validation, EIRMS, and persistence. */
+  async calculate(input: CreateInvoiceDto) {
+    this.assertSingleNature(input);
+    const result = await this.systemConfiguration.calculateLines(
+      input.ItemList,
+    );
+    const nature = this.invoiceNature(input);
+    const withholding = await this.systemConfiguration.withholding(
+      result.preTaxValue,
+      nature,
+    );
+    return { ...result, withholding };
+  }
+
+  private async applyConfiguredTax(input: CreateInvoiceDto): Promise<void> {
+    const result = await this.systemConfiguration.calculateLines(
+      input.ItemList,
+    );
+    const byLine = new Map(result.lines.map((line) => [line.LineNumber, line]));
+    for (const item of input.ItemList) {
+      const resolved = byLine.get(item.LineNumber)!;
+      item.TaxCode = resolved.TaxCode;
+      item.PreTaxValue = resolved.PreTaxValue;
+      item.ExciseTaxValue = resolved.ExciseTaxValue;
+      item.TaxAmount = resolved.TaxAmount;
+      item.TotalLineAmount = resolved.TotalLineAmount;
+      item.resolvedTaxRate = resolved.TaxRate;
+      item.resolvedTaxType = resolved.TaxType;
+    }
+    input.ValueDetails.ExciseValue = result.exciseValue;
+    input.ValueDetails.TaxValue = result.taxValue;
+    input.ValueDetails.TotalValue = result.totalValue;
+    if (input.DocumentDetails.Type === 'INV') {
+      const withholding = await this.systemConfiguration.withholding(
+        result.preTaxValue,
+        this.invoiceNature(input),
+      );
+      input.ValueDetails.IncomeWithholdValue = withholding.withholdingAmount;
+      input.resolvedWithholding = withholding;
+    }
+  }
+
+  private invoiceNature(input: CreateInvoiceDto): 'goods' | 'service' {
+    return input.ItemList[0]?.NatureOfSupplies?.trim().toLowerCase() ===
+      'service'
+      ? 'service'
+      : 'goods';
   }
 
   private buildRegisterPayload(
@@ -761,8 +817,8 @@ export class InvoicesService {
           ],
         });
       }
-      const parentExists = await this.prisma.invoice.findUnique({
-        where: { irn: relatedIrn },
+      const parentExists = await this.prisma.invoice.findFirst({
+        where: { irn: relatedIrn, ...tenantScope(this.context.get()) },
         select: { id: true },
       });
       if (!parentExists) {
@@ -1551,6 +1607,9 @@ export class InvoicesService {
         taxValue: isMemo ? taxTotal : input.ValueDetails.TaxValue,
         totalValue: isMemo ? totalAmount : input.ValueDetails.TotalValue,
         withholdValue: input.ValueDetails.IncomeWithholdValue,
+        withholdingRate: input.resolvedWithholding?.rate,
+        withholdingBase: input.resolvedWithholding?.preTaxAmount,
+        withholdingThreshold: input.resolvedWithholding?.threshold,
         currency: input.ValueDetails.InvoiceCurrency,
         transactionType: input.TransactionType,
         natureOfSupplies,
@@ -1579,6 +1638,8 @@ export class InvoicesService {
             unitPrice: item.UnitPrice,
             discount: item.Discount,
             taxCode: item.TaxCode,
+            taxRate: item.resolvedTaxRate,
+            taxType: item.resolvedTaxType,
             taxAmount: item.TaxAmount,
             preTaxValue: item.PreTaxValue,
             totalAmount: item.TotalLineAmount,

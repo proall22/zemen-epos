@@ -50,6 +50,12 @@ export class InvoicesController {
     return this.invoices.register(body);
   }
 
+  @Post('calculate')
+  @RequirePermissions('invoice.create')
+  calculate(@Body() body: CreateInvoiceDto) {
+    return this.invoices.calculate(body);
+  }
+
   @Get()
   @RequirePermissions('invoice.view')
   @ApiOperation({

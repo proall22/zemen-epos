@@ -30,16 +30,14 @@ import {
   createInventoryItem,
   createInventoryCategory,
   listInventoryCategories,
+  listActiveTaxCodes,
   listHarmonizationCodes,
   supersedeInventoryItem,
   updateInventoryItem,
   uploadInventoryImage,
 } from "@/lib/resources";
-import {
-  DEFAULT_TAX_CODE,
-  TAX_CODES,
-  normalizeTaxCode,
-} from "@/lib/tax-codes";
+import { DEFAULT_TAX_CODE, normalizeTaxCode } from "@/lib/tax-codes";
+import type { ActiveTaxCode } from "@/lib/resources";
 import type {
   HarmonizationCode,
   InventoryItem,
@@ -142,6 +140,7 @@ export function InventoryFormSheet({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [hsCodes, setHsCodes] = useState<HarmonizationCode[]>([]);
   const [categories, setCategories] = useState<InventoryCategory[]>([]);
+  const [taxCodes, setTaxCodes] = useState<ActiveTaxCode[]>([]);
   const [newCategory, setNewCategory] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<{ title: string; items: string[] } | null>(
@@ -159,9 +158,9 @@ export function InventoryFormSheet({
       setShowAdvanced(
         Boolean(
           item.longDescription ||
-            item.imageUrl ||
-            item.harmonizationCode ||
-            item.exciseRate != null,
+          item.imageUrl ||
+          item.harmonizationCode ||
+          item.exciseRate != null,
         ) ||
           item.unit !== "PCS" ||
           item.trackStock,
@@ -180,14 +179,20 @@ export function InventoryFormSheet({
 
   useEffect(() => {
     if (mode === null) return;
-    void Promise.all([listHarmonizationCodes(), listInventoryCategories()])
-      .then(([codes, categoryRows]) => {
+    void Promise.all([
+      listHarmonizationCodes(),
+      listInventoryCategories(),
+      listActiveTaxCodes(),
+    ])
+      .then(([codes, categoryRows, configuredTaxCodes]) => {
         setHsCodes(codes);
         setCategories(categoryRows);
+        setTaxCodes(configuredTaxCodes);
       })
       .catch(() => {
         setHsCodes([]);
         setCategories([]);
+        setTaxCodes([]);
       });
   }, [mode]);
 
@@ -196,7 +201,9 @@ export function InventoryFormSheet({
     if (!name) return;
     try {
       const created = await createInventoryCategory({ name });
-      setCategories((rows) => [...rows, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategories((rows) =>
+        [...rows, created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
       update("categoryId", created.id);
       setNewCategory("");
     } catch (err) {
@@ -408,8 +415,8 @@ export function InventoryFormSheet({
               <Field label="Availability" spanFull>
                 <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                   This item is part of your merchant-wide catalogue — every
-                  branch can sell it. Stock is counted per store, so each
-                  branch keeps its own quantity.
+                  branch can sell it. Stock is counted per store, so each branch
+                  keeps its own quantity.
                 </p>
               </Field>
               <Field label="Unit price *">
@@ -431,9 +438,9 @@ export function InventoryFormSheet({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TAX_CODES.map((tc) => (
+                    {taxCodes.map((tc) => (
                       <SelectItem key={tc.code} value={tc.code}>
-                        {tc.code} — {tc.label}
+                        {tc.code} — {tc.name} ({tc.rate}%)
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -458,13 +465,19 @@ export function InventoryFormSheet({
               <Field label="Category" spanFull>
                 <Select
                   value={form.categoryId || "__none__"}
-                  onValueChange={(v) => update("categoryId", v === "__none__" ? "" : v)}
+                  onValueChange={(v) =>
+                    update("categoryId", v === "__none__" ? "" : v)
+                  }
                 >
-                  <SelectTrigger><SelectValue placeholder="Uncategorized" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Uncategorized" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Uncategorized</SelectItem>
                     {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -474,7 +487,12 @@ export function InventoryFormSheet({
                     onChange={(e) => setNewCategory(e.target.value)}
                     placeholder="New category, e.g. Medicines"
                   />
-                  <Button type="button" variant="outline" onClick={() => void addCategory()} disabled={!newCategory.trim()}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void addCategory()}
+                    disabled={!newCategory.trim()}
+                  >
                     <Plus className="size-4" /> Add
                   </Button>
                 </div>
@@ -545,9 +563,15 @@ export function InventoryFormSheet({
                     <ImageUp className="size-5 text-muted-foreground" />
                   </div>
                   {form.imageUrl && (
-                    <img src={resolveImageUrl(form.imageUrl)} alt="Item preview" className="mt-2 h-24 w-24 rounded-md border object-cover" />
+                    <img
+                      src={resolveImageUrl(form.imageUrl)}
+                      alt="Item preview"
+                      className="mt-2 h-24 w-24 rounded-md border object-cover"
+                    />
                   )}
-                  <p className="mt-1 text-xs text-muted-foreground">JPEG, PNG, WebP, or GIF; maximum 5 MB.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    JPEG, PNG, WebP, or GIF; maximum 5 MB.
+                  </p>
                 </Field>
                 <Field label="Long description">
                   <Textarea
@@ -617,8 +641,7 @@ export function InventoryFormSheet({
                     if (v && item)
                       setForm((f) => ({
                         ...f,
-                        code:
-                          f.code === item.code ? `${item.code}-v2` : f.code,
+                        code: f.code === item.code ? `${item.code}-v2` : f.code,
                       }));
                   }}
                   className="size-3.5 accent-[#5700FF]"

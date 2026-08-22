@@ -20,8 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { listHarmonizationCodes } from "@/lib/resources";
-import { DEFAULT_TAX_CODE, TAX_CODES, taxRateForCode } from "@/lib/tax-codes";
+import {
+  listActiveTaxCodes,
+  listHarmonizationCodes,
+  type ActiveTaxCode,
+} from "@/lib/resources";
+import { DEFAULT_TAX_CODE } from "@/lib/tax-codes";
 import type { HarmonizationCode, InventoryItem } from "@/lib/types";
 
 /** Synthetic-id prefix marking an item that lives only in the cart and is
@@ -43,7 +47,10 @@ export interface AddAdHocLineDialogProps {
   forcedNature: InventoryItem["nature"] | null;
 }
 
-export function AddAdHocLineDialog({ onAdd, forcedNature }: AddAdHocLineDialogProps) {
+export function AddAdHocLineDialog({
+  onAdd,
+  forcedNature,
+}: AddAdHocLineDialogProps) {
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [unit, setUnit] = useState("PCS");
@@ -55,14 +62,21 @@ export function AddAdHocLineDialog({ onAdd, forcedNature }: AddAdHocLineDialogPr
   const [harmonizationCode, setHarmonizationCode] = useState("");
   const [exciseRate, setExciseRate] = useState("");
   const [hsCodes, setHsCodes] = useState<HarmonizationCode[]>([]);
+  const [taxCodes, setTaxCodes] = useState<ActiveTaxCode[]>([]);
 
   const disabled = !description.trim() || !unitPrice || Number(unitPrice) <= 0;
 
   useEffect(() => {
     if (!open) return;
-    void listHarmonizationCodes()
-      .then(setHsCodes)
-      .catch(() => setHsCodes([]));
+    void Promise.all([listHarmonizationCodes(), listActiveTaxCodes()])
+      .then(([codes, configuredTaxCodes]) => {
+        setHsCodes(codes);
+        setTaxCodes(configuredTaxCodes);
+      })
+      .catch(() => {
+        setHsCodes([]);
+        setTaxCodes([]);
+      });
   }, [open]);
 
   function reset() {
@@ -100,7 +114,7 @@ export function AddAdHocLineDialog({ onAdd, forcedNature }: AddAdHocLineDialogPr
       unit: unit.trim() || "PCS",
       unitPrice: Number(unitPrice),
       taxCode,
-      taxRate: taxRateForCode(taxCode),
+      taxRate: taxCodes.find((row) => row.code === taxCode)?.rate ?? 0,
       harmonizationCode: harmonizationCode.trim() || null,
       exciseRate: exciseRate.trim() ? Number(exciseRate) || 0 : null,
       nature,
@@ -183,9 +197,9 @@ export function AddAdHocLineDialog({ onAdd, forcedNature }: AddAdHocLineDialogPr
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TAX_CODES.map((tc) => (
+                  {taxCodes.map((tc) => (
                     <SelectItem key={tc.code} value={tc.code}>
-                      {tc.code} — {tc.label}
+                      {tc.code} — {tc.name} ({tc.rate}%)
                     </SelectItem>
                   ))}
                 </SelectContent>

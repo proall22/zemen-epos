@@ -37,12 +37,32 @@ interface FindManyArgs {
 
 function makePrisma() {
   const allRows = [
-    { id: '1', branchId: 'b-A', invoiceCounter: 5, documentNumber: '5', irn: 'IRN-A-5' },
-    { id: '2', branchId: 'b-A', invoiceCounter: 6, documentNumber: '6', irn: 'IRN-A-6' },
-    { id: '3', branchId: 'b-B', invoiceCounter: 9, documentNumber: '9', irn: 'IRN-B-9' },
+    {
+      id: '1',
+      branchId: 'b-A',
+      invoiceCounter: 5,
+      documentNumber: '5',
+      irn: 'IRN-A-5',
+    },
+    {
+      id: '2',
+      branchId: 'b-A',
+      invoiceCounter: 6,
+      documentNumber: '6',
+      irn: 'IRN-A-6',
+    },
+    {
+      id: '3',
+      branchId: 'b-B',
+      invoiceCounter: 9,
+      documentNumber: '9',
+      irn: 'IRN-B-9',
+    },
   ];
   const filterByBranch = (where?: { branchId?: string }) =>
-    where?.branchId ? allRows.filter((r) => r.branchId === where.branchId) : allRows;
+    where?.branchId
+      ? allRows.filter((r) => r.branchId === where.branchId)
+      : allRows;
 
   return {
     invoice: {
@@ -97,12 +117,15 @@ function makeService(
       seedFromEnvIfMissing: () => Promise.resolve(),
     } as unknown as never,
     {
-      available: jest.fn().mockResolvedValue({ onHand: 0, reserved: 0, available: 0 }),
+      available: jest
+        .fn()
+        .mockResolvedValue({ onHand: 0, reserved: 0, available: 0 }),
       release: jest.fn().mockResolvedValue({ released: 0 }),
     } as unknown as never,
     {
       salesFloorForOrNull: jest.fn().mockResolvedValue(null),
     } as unknown as never,
+    noop as never,
   );
 }
 

@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
 import { readApiMessage } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/table-pagination";
 import { loadOverrides } from "@/i18n";
 import {
   createLanguage,
@@ -65,6 +66,8 @@ export function AdminTranslationsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [keyPage, setKeyPage] = useState(1);
+  useEffect(() => setKeyPage(1), [selectedLang, missingOnly, search]);
   const [newLanguage, setNewLanguage] = useState({
     code: "",
     name: "",
@@ -211,7 +214,7 @@ export function AdminTranslationsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-6 py-8 lg:px-8">
       <header className="flex items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
@@ -220,10 +223,7 @@ export function AdminTranslationsPage() {
           <h1 className="text-3xl font-semibold tracking-tight">
             Translation management
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Override individual strings, flag missing translations, or toggle
-            an entire language off. Changes take effect on the next SPA load.
-          </p>
+          <p className="text-sm text-muted-foreground">Manage languages and translation overrides.</p>
         </div>
       </header>
 
@@ -393,7 +393,7 @@ export function AdminTranslationsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((r) => (
+                rows.slice((keyPage - 1) * TABLE_PAGE_SIZE, keyPage * TABLE_PAGE_SIZE).map((r) => (
                   <KeyRow
                     key={r.key}
                     row={r}
@@ -404,6 +404,7 @@ export function AdminTranslationsPage() {
               )}
             </TableBody>
           </Table>
+          <TablePagination page={keyPage} pageCount={Math.ceil(rows.length / TABLE_PAGE_SIZE)} total={rows.length} shown={rows.slice((keyPage - 1) * TABLE_PAGE_SIZE, keyPage * TABLE_PAGE_SIZE).length} onPage={setKeyPage} />
         </CardContent>
       </Card>
     </div>

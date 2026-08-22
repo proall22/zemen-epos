@@ -43,6 +43,7 @@ export const PERMISSIONS = {
   // grants. Merchant-side decide/revoke is authorized by MERCHANT_ADMIN
   // membership, not a global code.
   consent: ['request', 'manage'],
+  configuration: ['view', 'manage'],
 } as const;
 
 export type PermissionResource = keyof typeof PERMISSIONS;
@@ -59,7 +60,6 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   'merchant.view',
   'merchant.create',
   'merchant.update',
-  'merchant.export',
   'branch.view',
   'branch.create',
   'branch.update',
@@ -72,13 +72,8 @@ export const PLATFORM_PERMISSIONS: ReadonlyArray<string> = [
   'dashboard.system',
   'consent.request',
   'consent.manage',
-  'invoice.view',
-  'receipt.view',
-  'withholding.view',
-  'inventory.view',
-  'store.view',
-  'vendor.view',
-  'purchase.view',
+  'configuration.view',
+  'configuration.manage',
 ];
 
 /**
@@ -327,10 +322,10 @@ export function hasPermission(
   code: string,
   consentScopes?: ReadonlyArray<string>,
 ): boolean {
-  // Kept in the signature for compatibility with consent-aware callers. Full
-  // SUPER_ADMIN wildcard mode does not need the scopes to grant a code.
-  void consentScopes;
   if (!role) return false;
+  if (role === 'SUPER_ADMIN') {
+    return effectiveSuperAdminPermissions(consentScopes).has(code);
+  }
   const perms = ROLE_PERMISSIONS[role] ?? [];
   return perms.includes('*') || perms.includes(code);
 }

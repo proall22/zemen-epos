@@ -534,6 +534,18 @@ export interface CreateInventoryItemInput {
   branchId?: string | null;
 }
 
+export interface ActiveTaxCode {
+  id: string;
+  code: string;
+  name: string;
+  rate: number;
+  type: "STANDARD" | "ZERO_RATED" | "EXEMPT" | "OTHER";
+}
+
+export function listActiveTaxCodes(): Promise<ActiveTaxCode[]> {
+  return api<ActiveTaxCode[]>("/system-configuration/active-tax-codes");
+}
+
 export function createInventoryItem(
   input: CreateInventoryItemInput,
 ): Promise<InventoryItem> {
@@ -1098,6 +1110,7 @@ export interface CreateWithholdReceiptInput {
   };
   withholdDetail: {
     type: "TWTH" | "IWTH";
+    nature: "goods" | "service";
     rate?: number | null;
     preTaxAmount: number;
     withholdingAmount: number;
@@ -1116,6 +1129,29 @@ export interface CreateWithholdReceiptInput {
     wereda?: string;
     kebele?: string;
   };
+}
+
+export interface WithholdingCalculation {
+  preTaxAmount: number;
+  nature: "goods" | "service";
+  rate: number;
+  threshold: number;
+  applicable: boolean;
+  withholdingAmount: number;
+  netPayable: number;
+}
+
+export function calculateWithholding(
+  preTaxAmount: number,
+  nature: "goods" | "service",
+): Promise<WithholdingCalculation> {
+  return api<WithholdingCalculation>(
+    "/system-configuration/withholding/calculate",
+    {
+      method: "POST",
+      body: JSON.stringify({ preTaxAmount, nature }),
+    },
+  );
 }
 
 export function createWithholdReceipt(

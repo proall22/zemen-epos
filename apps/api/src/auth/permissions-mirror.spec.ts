@@ -100,17 +100,40 @@ describe('report permissions', () => {
   });
 });
 
-describe('SUPER_ADMIN wildcard', () => {
-  it('grants every permission code without a consent scope', () => {
+describe('SUPER_ADMIN consent boundary', () => {
+  it('grants platform administration without consent', () => {
     for (const code of [
-      'user.create',
-      'invoice.create',
-      'receipt.create',
-      'inventory.update',
-      'report.manage',
-      'future.permission',
+      'merchant.create',
+      'dashboard.system',
+      'configuration.manage',
     ]) {
       expect(hasPermission('SUPER_ADMIN', code)).toBe(true);
     }
+  });
+
+  it('denies merchant business data without consent', () => {
+    for (const code of [
+      'invoice.view',
+      'receipt.view',
+      'inventory.view',
+      'report.view',
+    ]) {
+      expect(hasPermission('SUPER_ADMIN', code)).toBe(false);
+    }
+  });
+
+  it('unlocks only the permissions represented by accepted consent scopes', () => {
+    expect(hasPermission('SUPER_ADMIN', 'invoice.view', ['INVOICES'])).toBe(
+      true,
+    );
+    expect(hasPermission('SUPER_ADMIN', 'receipt.view', ['INVOICES'])).toBe(
+      false,
+    );
+    expect(
+      hasPermission('SUPER_ADMIN', 'inventory.update', ['INVENTORY']),
+    ).toBe(false);
+    expect(
+      hasPermission('SUPER_ADMIN', 'inventory.update', ['INVENTORY_EDIT']),
+    ).toBe(true);
   });
 });

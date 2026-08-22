@@ -48,15 +48,15 @@ function makePrisma() {
       ),
       findFirst: jest.fn(item),
       findUnique: jest.fn(item),
-      findMany: jest.fn((_args?: unknown): Promise<unknown[]> =>
-        Promise.resolve([]),
+      findMany: jest.fn(
+        (_args?: unknown): Promise<unknown[]> => Promise.resolve([]),
       ),
     },
     inventoryStock: {
       create: jest.fn(({ data }) => Promise.resolve(data)),
       findUnique: jest.fn(() => Promise.resolve({ quantity: 5 })),
-      groupBy: jest.fn((_args?: unknown): Promise<unknown[]> =>
-        Promise.resolve([]),
+      groupBy: jest.fn(
+        (_args?: unknown): Promise<unknown[]> => Promise.resolve([]),
       ),
       findMany: jest.fn(() => Promise.resolve([])),
     },
@@ -94,6 +94,11 @@ function build(merchantId = 'm-test', branchId: string | null = 'b-A') {
     prisma as unknown as PrismaService,
     makeCtx(merchantId, branchId),
     makeStoreResolver(),
+    {
+      activeTaxCode: jest.fn((code: string) =>
+        Promise.resolve({ code, rate: code === 'VAT10' ? 10 : 15 }),
+      ),
+    } as never,
   );
   return { svc, prisma, tx };
 }
@@ -197,7 +202,9 @@ describe('InventoryService', () => {
       .fn()
       .mockResolvedValueOnce([{ inventoryItemId: 'a', _sum: { quantity: 52 } }])
       .mockResolvedValueOnce([{ inventoryItemId: 'a', _sum: { quantity: 40 } }])
-      .mockResolvedValueOnce([{ inventoryItemId: 'a', _sum: { quantity: 25 } }]);
+      .mockResolvedValueOnce([
+        { inventoryItemId: 'a', _sum: { quantity: 25 } },
+      ]);
     const [row] = await svc.list(true);
     expect(row.totalOnHand).toBe(52);
     expect(row.onHand).toBe(40);

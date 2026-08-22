@@ -25,14 +25,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api";
 import { readApiMessage, readUserMessages } from "@/lib/api-errors";
 import {
+  calculateWithholding,
   createWithholdReceipt,
   lookupExternalInvoice,
   type NextWithholdSequence,
+  type WithholdingCalculation,
 } from "@/lib/resources";
 import { isVerifyEnvelope } from "@/lib/types";
-
-/** Fixed by Ethiopian rules. Overridable per receipt, not per merchant. */
-const WITHHOLD_RATE = 3;
 
 /** Trims and keeps only non-empty keys, or null when nothing is set — lets us
  *  omit the supplier block entirely rather than sending a shell of blanks. */
@@ -63,9 +62,12 @@ export function WithholdingFormSheet({
 }: WithholdingFormSheetProps) {
   const [invoiceIrn, setInvoiceIrn] = useState("");
   const [type, setType] = useState<"TWTH" | "IWTH">("TWTH");
+  const [nature, setNature] = useState<"goods" | "service">("goods");
   const [preTax, setPreTax] = useState("");
   const [withholdAmount, setWithholdAmount] = useState("");
-  const [touchedAmount, setTouchedAmount] = useState(false);
+  const [calculation, setCalculation] = useState<WithholdingCalculation | null>(
+    null,
+  );
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<{ title: string; items: string[] } | null>(
@@ -99,9 +101,10 @@ export function WithholdingFormSheet({
   function reset() {
     setInvoiceIrn("");
     setType("TWTH");
+    setNature("goods");
     setPreTax("");
     setWithholdAmount("");
-    setTouchedAmount(false);
+    setCalculation(null);
     setReason("");
     setError(null);
     setSupplier({
@@ -124,16 +127,27 @@ export function WithholdingFormSheet({
     if (open) reset();
   }, [open]);
 
-  // Amount = 3% of pre-tax until the filer overrides it.
+  // Preview with the same trusted global configuration used during filing.
   useEffect(() => {
-    if (touchedAmount) return;
     const pre = Number(preTax);
     if (!Number.isFinite(pre) || pre <= 0) {
       setWithholdAmount("");
+      setCalculation(null);
       return;
     }
-    setWithholdAmount(((pre * WITHHOLD_RATE) / 100).toFixed(2));
-  }, [preTax, touchedAmount]);
+    const handle = setTimeout(() => {
+      void calculateWithholding(pre, nature)
+        .then((result) => {
+          setCalculation(result);
+          setWithholdAmount(result.withholdingAmount.toFixed(2));
+        })
+        .catch(() => {
+          setCalculation(null);
+          setWithholdAmount("");
+        });
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [preTax, nature]);
 
   // Debounced IRN → supplier + pre-tax from MoR.
   useEffect(() => {
@@ -189,7 +203,10 @@ export function WithholdingFormSheet({
     e.preventDefault();
     setError(null);
     if (!invoiceIrn.trim()) {
-      setError({ title: "Paste the supplier invoice IRN to continue.", items: [] });
+      setError({
+        title: "Paste the supplier invoice IRN to continue.",
+        items: [],
+      });
       return;
     }
     const preNum = Number(preTax);
@@ -198,8 +215,11 @@ export function WithholdingFormSheet({
       setError({ title: "Enter a valid pre-tax amount.", items: [] });
       return;
     }
-    if (!Number.isFinite(amtNum) || amtNum <= 0) {
-      setError({ title: "Withholding amount must be greater than 0.", items: [] });
+    if (!calculation?.applicable || !Number.isFinite(amtNum) || amtNum <= 0) {
+      setError({
+        title: `Withholding applies only above the configured ${nature} threshold.`,
+        items: [],
+      });
       return;
     }
     setSubmitting(true);
@@ -210,7 +230,8 @@ export function WithholdingFormSheet({
         invoiceDetail: { invoiceIrn: invoiceIrn.trim(), currency: "ETB" },
         withholdDetail: {
           type,
-          rate: WITHHOLD_RATE,
+          nature,
+          rate: calculation.rate,
           preTaxAmount: preNum,
           withholdingAmount: amtNum,
         },
@@ -220,11 +241,15 @@ export function WithholdingFormSheet({
     } catch (err) {
       if (err instanceof ApiError) {
         setError({
-          title: readApiMessage(err.body) ?? "Couldn't file this withhold receipt.",
+          title:
+            readApiMessage(err.body) ?? "Couldn't file this withhold receipt.",
           items: readUserMessages(err.body),
         });
       } else {
-        setError({ title: "Couldn't reach the server. Please try again.", items: [] });
+        setError({
+          title: "Couldn't reach the server. Please try again.",
+          items: [],
+        });
       }
     } finally {
       setSubmitting(false);
@@ -242,7 +267,8 @@ export function WithholdingFormSheet({
             </SheetTitle>
             <SheetDescription>
               Paste the supplier's invoice IRN — we'll look it up at MoR and
-              fill in what we can. The 3% withholding is computed for you.
+              fill in what we can. Withholding is computed from the current
+              system configuration.
             </SheetDescription>
             {next && (
               <span className="mt-1 w-fit rounded-md border border-dashed bg-background px-2.5 py-1.5 text-[11px] text-muted-foreground">
@@ -255,7 +281,12 @@ export function WithholdingFormSheet({
           </div>
         </SheetHeader>
 
-        <form id="withhold-form" onSubmit={submit} className="contents" noValidate>
+        <form
+          id="withhold-form"
+          onSubmit={submit}
+          className="contents"
+          noValidate
+        >
           <SheetBody className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label className="flex flex-wrap items-center gap-1.5">
@@ -284,15 +315,34 @@ export function WithholdingFormSheet({
               />
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <Field label="Withholding type *">
-                <Select value={type} onValueChange={(v) => setType(v as "TWTH" | "IWTH")}>
+                <Select
+                  value={type}
+                  onValueChange={(v) => setType(v as "TWTH" | "IWTH")}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="TWTH">TWTH — Transaction</SelectItem>
                     <SelectItem value="IWTH">IWTH — Income</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Supply nature *">
+                <Select
+                  value={nature}
+                  onValueChange={(value) =>
+                    setNature(value as "goods" | "service")
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="goods">Goods</SelectItem>
+                    <SelectItem value="service">Services</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -310,22 +360,10 @@ export function WithholdingFormSheet({
               <div className="flex flex-col gap-1.5">
                 <Label className="flex items-center gap-1.5">
                   Withhold amount *
-                  {!touchedAmount ? (
-                    <Tag tone="muted">Auto · 3%</Tag>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTouchedAmount(false);
-                        const pre = Number(preTax);
-                        if (Number.isFinite(pre) && pre > 0) {
-                          setWithholdAmount(((pre * WITHHOLD_RATE) / 100).toFixed(2));
-                        }
-                      }}
-                      className="rounded-sm bg-amber-500/10 px-1.5 py-px text-[9px] font-medium uppercase tracking-wider text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
-                    >
-                      Manual · reset
-                    </button>
+                  {calculation && (
+                    <Tag tone={calculation.applicable ? "muted" : "warn"}>
+                      {calculation.rate}% · threshold {calculation.threshold}
+                    </Tag>
                   )}
                 </Label>
                 <Input
@@ -333,10 +371,7 @@ export function WithholdingFormSheet({
                   step="any"
                   min="0"
                   value={withholdAmount}
-                  onChange={(e) => {
-                    setWithholdAmount(e.target.value);
-                    setTouchedAmount(true);
-                  }}
+                  readOnly
                   required
                 />
               </div>
@@ -439,7 +474,12 @@ export function WithholdingFormSheet({
           </SheetBody>
 
           <SheetFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={submitting}
+            >
               Cancel
             </Button>
             <Button type="submit" form="withhold-form" disabled={submitting}>

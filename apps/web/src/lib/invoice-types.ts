@@ -61,9 +61,7 @@ export function isNonTaxableTaxCode(
 /** ` (N)` suffix for non-taxable rows, else empty string. Intended for
  *  direct interpolation:
  *      `{line.description}{nonTaxableSuffix(line.taxCode)}` */
-export function nonTaxableSuffix(
-  taxCode: string | null | undefined,
-): string {
+export function nonTaxableSuffix(taxCode: string | null | undefined): string {
   return isNonTaxableTaxCode(taxCode) ? " (N)" : "";
 }
 
@@ -72,6 +70,17 @@ export function nonTaxableSuffix(
  *  {@link taxRateForCode} for the code → rate table. */
 export function vatRateForTaxCode(taxCode: string | null | undefined): number {
   return taxRateForCode(taxCode) / 100;
+}
+
+/** Prefer the immutable issue-time rate. The code fallback keeps invoices
+ * issued before tax-rate snapshots were introduced readable. */
+export function vatRateForLine(line: {
+  taxCode: string;
+  taxRate?: number | null;
+}): number {
+  return line.taxRate != null
+    ? line.taxRate / 100
+    : vatRateForTaxCode(line.taxCode);
 }
 
 /**
@@ -87,9 +96,10 @@ export function lineExcise(line: {
   taxAmount: number;
   preTaxValue: number;
   taxCode: string;
+  taxRate?: number | null;
 }): number {
-  const rate = vatRateForTaxCode(line.taxCode);
-  const excise = (line.taxAmount - line.preTaxValue * rate) / (1 + rate);
+  const rate = vatRateForLine(line);
+  const excise = line.taxAmount - line.preTaxValue * rate;
   return excise > 0.005 ? Math.round(excise * 100) / 100 : 0;
 }
 
