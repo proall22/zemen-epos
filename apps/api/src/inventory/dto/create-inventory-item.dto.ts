@@ -108,6 +108,15 @@ export class CreateInventoryItemDto {
   @Min(0)
   stockQuantity?: number;
 
+  @ApiPropertyOptional({
+    description:
+      'Cost per unit of the opening stock. Required when opening on-hand is greater than zero; never inferred from the selling price.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.0001)
+  openingUnitCost?: number;
+
   @ApiPropertyOptional({ description: 'Warn when on-hand falls to/below this' })
   @IsOptional()
   @IsNumber()

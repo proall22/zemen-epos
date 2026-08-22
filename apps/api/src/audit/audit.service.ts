@@ -56,6 +56,7 @@ export interface AuditQuery {
   limit?: number;
   offset?: number;
   branchId?: string;
+  merchantId?: string;
 }
 
 @Injectable()
@@ -265,6 +266,7 @@ export class AuditService implements OnModuleInit {
     // Merchant-scoped users see only their tenant's audit trail; SUPER_ADMIN
     // (ctx.merchantId === null) sees every row.
     if (ctx?.merchantId) where.merchantId = ctx.merchantId;
+    else if (query.merchantId) where.merchantId = query.merchantId;
     if (query.branchId) where.branchId = query.branchId;
     if (query.direction) where.direction = query.direction;
     if (query.action)

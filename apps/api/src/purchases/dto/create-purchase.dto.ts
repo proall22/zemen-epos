@@ -33,7 +33,7 @@ export class CreatePurchaseItemDto {
     description: 'Per-unit cost, in the purchase currency (default ETB).',
   })
   @IsNumber()
-  @Min(0)
+  @Min(0.0001)
   unitCost!: number;
 }
 

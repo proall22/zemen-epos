@@ -121,6 +121,7 @@ describe('InventoryService', () => {
       unitPrice: 10,
       trackStock: true,
       stockQuantity: 7,
+      openingUnitCost: 6,
     });
     // Array form: [stock row, RESTOCK movement].
     expect(prisma.$transaction).toHaveBeenCalled();
@@ -136,8 +137,22 @@ describe('InventoryService', () => {
       unitPrice: 10,
       trackStock: true,
       stockQuantity: 7,
+      openingUnitCost: 6,
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects opening stock when its cost basis is missing', async () => {
+    const { svc } = build();
+    await expect(
+      svc.create({
+        code: 'C',
+        description: 'D',
+        unitPrice: 10,
+        trackStock: true,
+        stockQuantity: 7,
+      }),
+    ).rejects.toThrow(/opening unit cost/i);
   });
 
   it('adjustStock moves the store row atomically and logs the movement', async () => {

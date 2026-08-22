@@ -232,9 +232,16 @@ export class PurchasesService {
         });
         const nextQty = onHand._sum.quantity ?? 0;
         const priorQty = nextQty - agg.addedQty;
-        const priorAvg = item.avgCost ?? item.unitPrice;
+        // Never infer procurement cost from retail price. When historical
+        // opening stock has no cost basis, the first genuine purchase becomes
+        // the initial average cost; its known cost must not be diluted by an
+        // invented retail-price cost for the older units.
+        const purchaseAvg = agg.addedCost / agg.addedQty;
+        const priorAvg = item.avgCost;
         const nextAvg =
-          nextQty > 0
+          priorAvg == null
+            ? round4(purchaseAvg)
+            : nextQty > 0
             ? round4((priorQty * priorAvg + agg.addedCost) / nextQty)
             : priorAvg;
         await tx.inventoryItem.update({

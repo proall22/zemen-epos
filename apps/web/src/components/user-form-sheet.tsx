@@ -24,12 +24,13 @@ import {
 import { ApiError } from "@/lib/api";
 import { readApiMessage, readUserMessages } from "@/lib/api-errors";
 import { useAuth } from "@/lib/auth";
-import { createUser, listBranches, updateUser } from "@/lib/resources";
+import { createUser, listBranches, listMerchants, updateUser } from "@/lib/resources";
 import {
   ASSIGNABLE_ROLES,
   ROLE_LABELS,
   type AssignableRole,
   type ManagedUser,
+  type Merchant,
   type SafeBranch,
 } from "@/lib/types";
 
@@ -53,6 +54,8 @@ export function UserFormSheet({
   const [name, setName] = useState("");
   const [role, setRole] = useState<AssignableRole>("CASHIER");
   const [password, setPassword] = useState("");
+  const [selectedMerchantId, setSelectedMerchantId] = useState("");
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
   // Grant set + pinned default. MERCHANT_ADMIN ignores both — the backend
   // grants them implicit access to every branch.
   const [branchIds, setBranchIds] = useState<string[]>([]);
@@ -63,17 +66,23 @@ export function UserFormSheet({
     null,
   );
 
-  // Load the merchant's branches the first time the sheet opens. The picker
-  // is only meaningful for users inside a merchant — SUPER_ADMIN sees the
-  // dropdown empty + disabled (they should use the merchants admin page).
+  useEffect(() => {
+    if (mode === null || actor?.role !== "SUPER_ADMIN") return;
+    void listMerchants().then(setMerchants).catch(() => setMerchants([]));
+  }, [mode, actor?.role]);
+
+  // Load branches for the explicitly selected tenant. Merchant admins are
+  // locked to their own merchant; Super Admin must choose one.
   useEffect(() => {
     if (mode === null) return;
-    const merchantId = user?.merchantId ?? actor?.merchantId ?? merchant?.id;
+    const merchantId = actor?.role === "SUPER_ADMIN"
+      ? selectedMerchantId
+      : actor?.merchantId ?? merchant?.id ?? "";
     if (!merchantId) return;
     void listBranches(merchantId)
       .then((rows) => setBranches(rows))
       .catch(() => setBranches([]));
-  }, [mode, user?.merchantId, actor?.merchantId, merchant?.id]);
+  }, [mode, actor?.role, actor?.merchantId, merchant?.id, selectedMerchantId]);
 
   useEffect(() => {
     if (mode === "edit" && user) {
@@ -86,6 +95,7 @@ export function UserFormSheet({
       setPassword("");
       setBranchIds(user.branchIds ?? []);
       setPinnedBranchId(user.branchId ?? "");
+      setSelectedMerchantId(user.merchantId ?? "");
     } else if (mode === "create") {
       setEmail("");
       setName("");
@@ -93,10 +103,11 @@ export function UserFormSheet({
       setPassword("");
       setBranchIds([]);
       setPinnedBranchId("");
+      setSelectedMerchantId(actor?.merchantId ?? merchant?.id ?? "");
     }
     setError(null);
     setBusy(false);
-  }, [mode, user?.id]);
+  }, [mode, user?.id, actor?.merchantId, merchant?.id]);
 
   const open = mode !== null;
 
@@ -112,6 +123,13 @@ export function UserFormSheet({
     e.preventDefault();
     setError(null);
     const isMerchantAdmin = role === "MERCHANT_ADMIN";
+    if (actor?.role === "SUPER_ADMIN" && !selectedMerchantId) {
+      setError({
+        title: "Select the merchant this user belongs to.",
+        items: ["Only platform Super Admin accounts have no merchant. Every merchant role must be assigned to one tenant."],
+      });
+      return;
+    }
     // MERCHANT_ADMIN — grants inferred by role; skip grant validation.
     if (!isMerchantAdmin && branchIds.length === 0) {
       setError({
@@ -146,6 +164,7 @@ export function UserFormSheet({
           name: name.trim() || undefined,
           role,
           password,
+          merchantId: selectedMerchantId || undefined,
           branchIds: effectiveBranchIds,
           branchId: effectivePinned,
         });
@@ -203,6 +222,29 @@ export function UserFormSheet({
           noValidate
         >
           <SheetBody className="flex flex-col gap-4">
+            {actor?.role === "SUPER_ADMIN" && (
+              <div className="flex flex-col gap-1.5">
+                <Label>Merchant *</Label>
+                <Select
+                  value={selectedMerchantId}
+                  onValueChange={(value) => {
+                    setSelectedMerchantId(value);
+                    setBranches([]);
+                    setBranchIds([]);
+                    setPinnedBranchId("");
+                  }}
+                  disabled={mode === "edit"}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select a merchant" /></SelectTrigger>
+                  <SelectContent>
+                    {merchants.map((m) => <SelectItem key={m.id} value={m.id}>{m.legalName} · {m.tin}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  This controls tenant ownership. It cannot be changed after the user is created.
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <Label>Email *</Label>
               <Input

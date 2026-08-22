@@ -75,6 +75,7 @@ interface FormState {
   nature: "goods" | "service";
   trackStock: boolean;
   stockQuantity: string;
+  openingUnitCost: string;
   lowStockThreshold: string;
 }
 
@@ -95,6 +96,7 @@ function blank(): FormState {
     nature: "goods",
     trackStock: false,
     stockQuantity: "",
+    openingUnitCost: "",
     lowStockThreshold: "",
   };
 }
@@ -116,6 +118,7 @@ function fromItem(item: InventoryItem): FormState {
     nature: item.nature,
     trackStock: item.trackStock,
     stockQuantity: "",
+    openingUnitCost: "",
     lowStockThreshold:
       item.lowStockThreshold != null ? String(item.lowStockThreshold) : "",
   };
@@ -274,6 +277,16 @@ export function InventoryFormSheet({
       problems.push("Enter a unit price of 0 or more.");
     if (saveAsNew && item && code === item.code)
       problems.push("Give the new SKU a different item code.");
+    const openingQuantity = Number(form.stockQuantity);
+    const openingUnitCost = Number(form.openingUnitCost);
+    if (
+      form.trackStock &&
+      qtyEditable &&
+      openingQuantity > 0 &&
+      (!form.openingUnitCost.trim() || !Number.isFinite(openingUnitCost) || openingUnitCost <= 0)
+    ) {
+      problems.push("Enter the cost per unit for the opening stock.");
+    }
     if (problems.length > 0) {
       setError({
         title: "Please complete the required fields.",
@@ -311,6 +324,10 @@ export function InventoryFormSheet({
             : includeQty
               ? 0
               : undefined,
+        openingUnitCost:
+          includeQty && Number(form.stockQuantity) > 0
+            ? Number(form.openingUnitCost)
+            : undefined,
         lowStockThreshold:
           trackStock && form.lowStockThreshold.trim() !== ""
             ? Number(form.lowStockThreshold)
@@ -593,7 +610,7 @@ export function InventoryFormSheet({
                     Track stock for this item
                   </label>
                   {form.trackStock && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <Field label="On hand">
                         <Input
                           type="number"
@@ -612,6 +629,21 @@ export function InventoryFormSheet({
                           </span>
                         )}
                       </Field>
+                      {qtyEditable && Number(form.stockQuantity) > 0 && (
+                        <Field label="Opening cost / unit">
+                          <Input
+                            type="number"
+                            step="any"
+                            min="0.0001"
+                            value={form.openingUnitCost}
+                            onChange={(e) => update("openingUnitCost", e.target.value)}
+                            placeholder="Required"
+                          />
+                          <span className="text-[11px] text-muted-foreground">
+                            Procurement cost, not the POS selling price.
+                          </span>
+                        </Field>
+                      )}
                       <Field label="Low-stock alert at">
                         <Input
                           type="number"

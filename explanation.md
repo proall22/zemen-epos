@@ -505,3 +505,287 @@ Total Main Branch Milk = 97
 - **Sale**: goods leaving the sales-floor store for a customer.
 
 For a small shop, one `Main` store per branch can be both the default and sales-floor store. Cold Storage, Back Room and Warehouse stores are needed only when the merchant wants separate physical stock locations.
+
+# Verified implementation details: stock placement, purchase cost and selling price
+
+This section is based on the current backend and frontend implementation, not
+only on the intended business workflow.
+
+## What is created automatically
+
+During merchant self-registration, the database transaction creates:
+
+```text
+Merchant (pending approval)
+└── First branch (pending approval)
+    └── Main store
+        ├── code: MAIN
+        ├── default: yes
+        ├── sales floor: yes
+        └── active: yes
+```
+
+When an additional branch is created, `ensureDefaultStore` creates the same
+Main/default/sales-floor store when that branch has no store. Therefore every
+normally created branch starts with a place to receive and sell stock. Older
+branches created before this behavior may still need repair through Inventory →
+Stores.
+
+## Does creating an inventory item put it in Main store?
+
+Creating the catalogue record and creating stock are separate actions.
+
+- If stock tracking is off, no store quantity is created.
+- If stock tracking is on but opening quantity is zero, no store quantity is
+  created.
+- If stock tracking is on, opening quantity is greater than zero, and the user
+  is acting in a branch, the opening quantity is placed in that branch's
+  sales-floor store. Normally this is Main.
+- If there is no active branch context, the catalogue item is created without
+  opening stock. Stock must later be added by a purchase, restock or stock count.
+
+The system now also requires an **opening cost per unit** when opening quantity
+is greater than zero. This is deliberately separate from selling price.
+
+Example:
+
+```text
+Item: Sugar
+POS selling price: 300 ETB
+Opening quantity: 3
+Opening cost per unit: 240 ETB
+```
+
+Result:
+
+```text
+Main sales floor quantity = 3
+Catalogue selling price = 300
+Average inventory cost = 240
+Opening inventory value = 3 × 240 = 720 ETB
+```
+
+The system no longer assumes that the 300 ETB retail price was the cost of the
+opening stock.
+
+## What Unit cost means on a purchase
+
+`unitCost` is the supplier's procurement cost for one unit. It is not the POS
+selling price.
+
+For every purchase line:
+
+```text
+line cost = quantity × unit cost
+```
+
+For the purchase header:
+
+```text
+purchase total = sum of all line costs
+```
+
+The implementation retains up to four decimal places while calculating line
+cost and rounds the displayed purchase total to two decimal places.
+
+Example:
+
+```text
+Quantity: 10
+Unit cost: 400 ETB
+Line cost: 10 × 400 = 4,000 ETB
+```
+
+The receiving store gains 10 units, the purchase and line are saved, and a
+RESTOCK movement links the stock increase back to that purchase.
+
+## What happens if Unit cost is blank
+
+Previously, the browser converted a blank field to `0`, and the backend allowed
+zero-cost purchase lines. That could incorrectly reduce average inventory cost.
+
+This has been corrected:
+
+- blank unit cost is rejected;
+- zero is rejected;
+- negative cost is rejected;
+- the value must be greater than zero in both frontend and backend validation.
+
+If goods are genuinely free samples or a promotional bonus, they should not be
+silently recorded as an ordinary zero-cost purchase. The merchant should use an
+explicit, documented stock-adjustment policy appropriate to its accounting
+rules.
+
+## Weighted-average cost calculation
+
+Purchase receiving updates `avgCost` for the item across the merchant's total
+on-hand quantity in all stores and branches.
+
+When an existing cost basis is known:
+
+```text
+new average cost =
+  (old on-hand × old average cost + received quantity × new unit cost)
+  ÷ total on-hand after receipt
+```
+
+Example with three old units:
+
+```text
+Old quantity: 3
+Old average cost: 300 ETB
+New purchase quantity: 10
+New purchase unit cost: 400 ETB
+
+Old inventory value = 3 × 300 = 900
+New receipt value = 10 × 400 = 4,000
+Combined value = 4,900
+Combined quantity = 13
+
+New average cost = 4,900 ÷ 13 = 376.9231 ETB
+```
+
+The database stores the result rounded to four decimal places.
+
+If historical opening stock exists but has no recorded cost basis, the system
+no longer substitutes selling price as cost. The first genuine purchase cost
+establishes `avgCost`. This is safer than inventing a historical procurement
+cost, although the old units' true margin remains unknowable. New items with an
+opening balance should therefore always record opening unit cost.
+
+## Does a supplier cost increase change the POS price?
+
+No. This is intentional.
+
+The current system maintains two different values:
+
+| Value | Purpose | Changed by purchase? |
+|---|---|---|
+| `unitPrice` | Price charged to the customer at POS | No |
+| `avgCost` | Weighted procurement cost used for inventory/margin analysis | Yes |
+
+If an item sells for 300 ETB and the next supplier delivery costs 400 ETB, the
+POS continues showing 300 ETB until an authorized user changes the item's
+selling price under Inventory.
+
+This separation is correct in real businesses: a supplier cannot directly
+decide the merchant's retail price. The merchant may absorb the increase,
+change its margin, or set a new selling price.
+
+Example:
+
+```text
+Before purchase:
+  on-hand = 3
+  selling price = 300
+  average cost = 250
+
+Receive:
+  10 units at cost 400
+
+After purchase:
+  on-hand = 13
+  selling price shown at POS = 300 (unchanged)
+  average cost = (3 × 250 + 10 × 400) ÷ 13
+               = 365.3846
+```
+
+Selling at 300 would now be below average cost. The system records the facts but
+does not automatically rewrite the retail price. The merchant should review and
+manually change the selling price before continuing sales if that is its policy.
+
+Changing `unitPrice` affects future carts and invoices. Previously issued
+invoice lines keep their own price snapshot and are not rewritten.
+
+## Purchase receiving store versus POS selling store
+
+A purchase line always names its receiving store. The form initially selects
+the branch's sales-floor/default store, but the user can choose another active
+store in that same branch.
+
+Example:
+
+```text
+Receive 100 Milk into Cold Storage
+
+Cold Storage = 100
+Main sales floor = 0
+Branch total = 100
+POS sellable = 0
+```
+
+The ordinary POS does not automatically pull from Cold Storage, Back Room or
+Warehouse. It sells only from the store flagged as the branch's sales floor.
+This prevents an invoice from claiming that shelf stock existed when the units
+were physically somewhere else.
+
+To make warehouse stock sellable:
+
+```text
+Inventory → Stores
+→ choose Transfer stock
+→ source: Cold Storage / Back Room / Warehouse
+→ destination: Main sales floor
+→ choose item and quantity
+→ confirm transfer
+```
+
+The transfer atomically:
+
+- subtracts from the source store;
+- adds to the destination store;
+- writes paired TRANSFER_OUT and TRANSFER_IN movements;
+- keeps total merchant stock unchanged;
+- rejects a transfer when the source no longer has enough stock.
+
+Cross-branch store transfers are not currently supported. Moving goods to a
+different branch needs a separate inter-branch workflow; the present transfer
+feature intentionally permits only stores inside the same branch.
+
+## What happens when the sales floor is empty but another store has stock?
+
+For a branch using `BLOCK_ON_EMPTY`:
+
+```text
+Main sales floor = 0
+Back Room = 20
+```
+
+The POS reports the item as unavailable. The user must transfer stock from Back
+Room to Main before selling it. It does not silently deduct from Back Room.
+
+For `ALLOW_NEGATIVE`, the sale path can record negative sales-floor stock after
+MoR accepts the sale. This policy is intended for businesses that tolerate
+stock timing differences, but explicit transfers are still the correct workflow.
+
+## Is the multi-store scenario implemented correctly?
+
+The following parts are implemented consistently:
+
+- automatic Main sales-floor store for normal branch creation;
+- exactly one active sales-floor choice maintained by store operations;
+- opening stock assigned to the acting branch's sales floor;
+- purchases received into an explicitly selected active store;
+- per-store stock balances;
+- same-branch atomic transfers with paired audit movements;
+- POS availability and reservations based on the sales-floor store;
+- sale decrement only after MoR invoice acceptance;
+- cancellation reversal tied to the original sale movement/store;
+- purchase cost kept separate from selling price;
+- weighted-average procurement cost;
+- historical invoice price snapshots.
+
+The important limitations are:
+
+- POS cannot choose a different source store per sale;
+- stock is not auto-replenished from warehouse/back room;
+- cross-branch transfers are not implemented;
+- purchase cost changes do not trigger automatic selling-price suggestions;
+- the `BranchItemPrice` database model exists, but the current inventory/POS
+  read path does not apply branch-specific price overrides. The active selling
+  price is the catalogue item's `unitPrice` for every branch.
+
+These limitations are acceptable for a controlled sales-floor model, but they
+must be understood operationally. A business needing tills to sell directly
+from several warehouses or different retail prices per branch needs additional
+workflow implementation.

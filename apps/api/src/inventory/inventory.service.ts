@@ -375,6 +375,10 @@ export class InventoryService {
         : {}),
       unit: input.unit ?? 'PCS',
       unitPrice: input.unitPrice,
+      avgCost:
+        trackStock && (input.stockQuantity ?? 0) > 0
+          ? (input.openingUnitCost ?? null)
+          : null,
       taxCode,
       // Always derived — never taken from the client, so the code and the rate
       // can't disagree.
@@ -391,6 +395,7 @@ export class InventoryService {
 
   async create(input: CreateInventoryItemDto): Promise<InventoryItem> {
     const merchantId = this.resolveMerchantId();
+    this.assertOpeningCost(input);
     if (input.categoryId) {
       await this.assertCategory(input.categoryId, merchantId);
     }
@@ -442,6 +447,7 @@ export class InventoryService {
   ): Promise<InventoryItem> {
     const old = await this.get(id); // 404 if missing — already merchant-scoped
     const merchantId = this.resolveMerchantId();
+    this.assertOpeningCost(input);
     const createData = await this.toCreateData(input, merchantId);
     try {
       const [created] = await this.prisma.$transaction([
@@ -683,6 +689,7 @@ export class InventoryService {
     const {
       categoryId,
       stockQuantity: _stockQuantity,
+      openingUnitCost: _openingUnitCost,
       branchId: _branchId,
       ...fields
     } = input;
@@ -716,6 +723,18 @@ export class InventoryService {
         throw new NotFoundException(`Item ${id} not found`);
       }
       this.rethrowAsConflict(error);
+    }
+  }
+
+  private assertOpeningCost(input: CreateInventoryItemDto): void {
+    if (
+      input.trackStock &&
+      (input.stockQuantity ?? 0) > 0 &&
+      !(typeof input.openingUnitCost === 'number' && input.openingUnitCost > 0)
+    ) {
+      throw new BadRequestException(
+        'Enter the opening unit cost when creating an item with opening stock. Selling price cannot be used as inventory cost.',
+      );
     }
   }
 }

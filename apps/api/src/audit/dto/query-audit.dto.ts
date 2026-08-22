@@ -69,4 +69,9 @@ export class QueryAuditDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @ApiPropertyOptional({ description: 'Super Admin only: merchant id' })
+  @IsOptional()
+  @IsString()
+  merchantId?: string;
 }
