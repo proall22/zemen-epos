@@ -1,22 +1,22 @@
 services:
-  # Optional: Comment out or remove if using Neon DB
-  # postgres:
-  #   image: postgres:16-alpine
-  #   container_name: zemen-epos-postgres
-  #   environment:
-  #     POSTGRES_USER: ${POSTGRES_USER:-zemen}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zemen}
-  #     POSTGRES_DB: ${POSTGRES_DB:-zemen}
-  #   ports:
-  #     - "127.0.0.1:54320:5432"
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql/data
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zemen} -d $${POSTGRES_DB:-zemen}"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 10
-  #   restart: unless-stopped
+  # Production PostgreSQL lives on the VPS but is reachable only from this
+  # private Compose network. Data survives container recreation in the named
+  # postgres-data volume.
+  postgres:
+    image: postgres:16-alpine
+    container_name: zemen-epos-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in the root .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in the root .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in the root .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -102,10 +102,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4899
-      # Single source of truth for Compose: the repository-root .env. The :?
-      # guard makes `docker compose config` fail instead of silently overriding
-      # apps/api/.env with an empty value.
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in the root .env}
+      # Compose constructs the private database URL from root .env values.
+      # Use a hex password so it is URL-safe without extra encoding.
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER must be set}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB must be set}?schema=public
       REDIS_URL: redis://redis:6379
       VAULT_ADDR: http://vault:8200
       VAULT_APPROLE_ROLE_ID_FILE: /vault/approle/role-id
@@ -150,8 +149,8 @@ services:
       - ./legal-documents:/var/lib/zemen/legal-documents
       - ${EIRMS_CERT_DIR:-./apps/api/secrets/zemen}:/etc/zemen:ro
     depends_on:
-      # postgres: # Remove postgres dependency
-      #   condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       vault:
@@ -166,26 +165,25 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # backup service disabled (Neon handles backups)
-  # backup:
-  #   image: postgres:16-alpine
-  #   container_name: zemen-epos-backup
-  #   environment:
-  #     PGHOST: postgres
-  #     PGUSER: ${POSTGRES_USER:-zemen}
-  #     PGPASSWORD: ${POSTGRES_PASSWORD:-zemen}
-  #     PGDATABASE: ${POSTGRES_DB:-zemen}
-  #     BACKUP_CRON: "0 2 * * *"
-  #     BACKUP_RETENTION_DAYS: "14"
-  #   volumes:
-  #     - ./backups:/backups
-  #     - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
-  #     - ./scripts/backup-entrypoint.sh:/usr/local/bin/backup-entrypoint.sh:ro
-  #   entrypoint: ["/bin/sh", "/usr/local/bin/backup-entrypoint.sh"]
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  backup:
+    image: postgres:16-alpine
+    container_name: zemen-epos-backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER must be set in the root .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in the root .env}
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB must be set in the root .env}
+      BACKUP_CRON: ${BACKUP_CRON:-0 2 * * *}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup.sh:/usr/local/bin/backup.sh:ro
+      - ./scripts/backup-entrypoint.sh:/usr/local/bin/backup-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup-entrypoint.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
   web:
     build:
@@ -340,7 +338,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  # postgres-data: # Remove postgres volume
+  postgres-data:
   redis-data:
 
 networks:

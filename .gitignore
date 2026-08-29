@@ -118,3 +118,6 @@ bin/
 # Go coverage
 coverage.out
 *.coverprofile
+
+# Local Postman collection contains real MoR credentials.
+/Next-Level-MoR.postman_collection.json
